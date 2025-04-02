@@ -1,0 +1,39 @@
+# Общие настройки
+.DS_Store
+.idea/
+.vscode/
+*.log
+*.swp
+
+# Python (Django) файлы
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.sqlite3
+/venv/
+/.env
+
+# Flutter файлы
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.metadata
+pubspec.lock
+
+# ОС специфичные файлы
+Thumbs.db
+*.bak
+*.tmp
+
+# IDE и редакторы
+*.iml
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Кэш браузеров
+*.cache
+*.npm

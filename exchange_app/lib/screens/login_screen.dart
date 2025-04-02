@@ -1,0 +1,102 @@
+import 'package:flutter/material.dart';
+import 'package:exchange_app/services/auth_service.dart';
+
+class LoginScreen extends StatefulWidget {
+  const LoginScreen({super.key});
+
+  @override
+  State<LoginScreen> createState() => _LoginScreenState();
+}
+
+class _LoginScreenState extends State<LoginScreen> {
+  final TextEditingController _emailController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+  final AuthService _authService = AuthService();
+  bool _isLoading = false;
+  bool _loginFailed = false;
+
+  Future<void> _handleLogin() async {
+    setState(() {
+      _isLoading = true;
+      _loginFailed = false;
+    });
+
+    try {
+      await _authService.signIn(
+        _emailController.text.trim(),
+        _passwordController.text.trim(),
+      );
+      setState(() {
+        _isLoading = false;
+      });
+      // Перенаправляем на главную страницу после успешного входа
+      Navigator.pushReplacementNamed(context, '/main');
+    } catch (e) {
+      setState(() {
+        _isLoading = false;
+        _loginFailed = true;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка входа: $e')),
+      );
+    }
+  }
+
+  @override
+  void dispose() {
+    _emailController.dispose();
+    _passwordController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text('Вход'),
+      ),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            TextField(
+              controller: _emailController,
+              decoration: InputDecoration(
+                labelText: 'Email',
+                border: OutlineInputBorder(),
+                errorText: _loginFailed ? 'Проверьте email или пароль' : null,
+              ),
+              keyboardType: TextInputType.emailAddress,
+            ),
+            const SizedBox(height: 16),
+            TextField(
+              controller: _passwordController,
+              decoration: InputDecoration(
+                labelText: 'Пароль',
+                border: OutlineInputBorder(),
+                errorText: _loginFailed ? 'Проверьте email или пароль' : null,
+              ),
+              obscureText: true,
+            ),
+            const SizedBox(height: 24),
+            _isLoading
+                ? const CircularProgressIndicator()
+                : ElevatedButton(
+                    onPressed: _handleLogin,
+                    child: const Text('Войти'),
+                  ),
+            const SizedBox(height: 16),
+            TextButton(
+              onPressed: () {
+                // Перенаправляем на страницу регистрации (позже добавим)
+                Navigator.pushNamed(context, '/signup');
+              },
+              child: const Text('Нет аккаунта? Зарегистрируйтесь'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
