@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:exchange_app/services/auth_service.dart';
+import 'package:exchange_app/widgets/app_drawer.dart';
 
 class EventsScreen extends StatefulWidget {
   const EventsScreen({super.key});
@@ -16,13 +18,13 @@ class _EventsScreenState extends State<EventsScreen> {
   final AuthService _authService = AuthService();
 
   Future<bool> _isSuperAdmin() async {
-    final user = _authService.getCurrentUser();
-    if (user == null) return false;
+    final user = _authService.getCurrentUser()!;
     final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
     return userDoc.data()?['isSuperAdmin'] ?? false;
   }
 
   Future<void> _addEvent() async {
+    final user = FirebaseAuth.instance.currentUser!;
     final title = _titleController.text.trim();
     final description = _descriptionController.text.trim();
     final currency = _currencyController.text.trim();
@@ -35,12 +37,16 @@ class _EventsScreenState extends State<EventsScreen> {
     }
 
     try {
-      await FirebaseFirestore.instance.collection('events').add({
+      await FirebaseFirestore.instance
+          .collection('users')
+          .doc(user.uid)
+          .collection('events')
+          .add({
         'title': title,
         'description': description,
         'currency': currency,
         'date': Timestamp.now(),
-        'type': 'custom', // Отличаем пользовательские события от транзакций
+        'type': 'custom',
       });
       _titleController.clear();
       _descriptionController.clear();
@@ -65,11 +71,14 @@ class _EventsScreenState extends State<EventsScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final user = FirebaseAuth.instance.currentUser!;
     return Scaffold(
       appBar: AppBar(
         title: const Text('События'),
         backgroundColor: Colors.blueAccent,
+        elevation: 0,
       ),
+      drawer: AppDrawer(currentRoute: 'events', authService: _authService),
       body: Column(
         children: [
           FutureBuilder<bool>(
@@ -120,7 +129,12 @@ class _EventsScreenState extends State<EventsScreen> {
           ),
           Expanded(
             child: StreamBuilder<QuerySnapshot>(
-              stream: FirebaseFirestore.instance.collection('events').orderBy('date', descending: true).snapshots(),
+              stream: FirebaseFirestore.instance
+                  .collection('users')
+                  .doc(user.uid)
+                  .collection('events')
+                  .orderBy('date', descending: true)
+                  .snapshots(),
               builder: (context, snapshot) {
                 if (snapshot.connectionState == ConnectionState.waiting) {
                   return const Center(child: CircularProgressIndicator());
