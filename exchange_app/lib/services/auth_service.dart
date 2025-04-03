@@ -15,6 +15,9 @@ class AuthService {
       User? user = userCredential.user;
       if (user != null) {
         print('Пользователь зарегистрирован, UID: ${user.uid}');
+        // Обновляем displayName в FirebaseAuth
+        await user.updateDisplayName(username);
+        await user.reload();
         try {
           await _firestore.collection('users').doc(user.uid).set({
             'uid': user.uid,
@@ -56,5 +59,23 @@ class AuthService {
 
   User? getCurrentUser() {
     return _auth.currentUser;
+  }
+
+  // Добавляем метод для проверки статуса суперадмина
+  Future<bool> isSuperAdmin() async {
+    User? user = _auth.currentUser;
+    if (user == null) return false;
+
+    try {
+      DocumentSnapshot doc =
+          await _firestore.collection('users').doc(user.uid).get();
+      if (doc.exists) {
+        return doc['isSuperAdmin'] ?? false;
+      }
+      return false;
+    } catch (e) {
+      print('Ошибка проверки статуса суперадмина: $e');
+      return false;
+    }
   }
 }

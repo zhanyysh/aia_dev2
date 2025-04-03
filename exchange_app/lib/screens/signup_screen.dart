@@ -1,6 +1,8 @@
+// lib/screens/signup_screen.dart
 import 'package:flutter/material.dart';
 import 'package:exchange_app/services/auth_service.dart';
 import 'package:exchange_app/screens/login_screen.dart';
+import 'package:exchange_app/widgets/app_drawer.dart'; // Добавляем импорт для AppDrawer
 
 class SignUpScreen extends StatefulWidget {
   const SignUpScreen({super.key});
@@ -95,6 +97,10 @@ class _SignUpScreenState extends State<SignUpScreen> {
       appBar: AppBar(
         title: const Text('Регистрация'),
         backgroundColor: Colors.blueAccent,
+      ),
+      drawer: AppDrawer( // Добавляем боковое меню
+        currentRoute: 'signup',
+        authService: _authService,
       ),
       body: Container(
         decoration: BoxDecoration(
