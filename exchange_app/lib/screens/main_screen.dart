@@ -56,31 +56,42 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     try {
-      // Обновляем курс валюты в Firestore
-      await FirebaseFirestore.instance
+      // Проверяем, существует ли документ для выбранной валюты в коллекции currencies
+      final currencyDocRef = FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('currencies')
-          .doc(_selectedCurrency)
-          .update({
-        'rate': _rate,
-      });
+          .doc(_selectedCurrency);
 
-      // Добавляем транзакцию в events
+      final currencyDoc = await currencyDocRef.get();
+      if (!currencyDoc.exists) {
+        // Если документа нет, создаем его с начальным значением курса
+        await currencyDocRef.set({
+          'rate': _rate,
+        });
+      } else {
+        // Если документ существует, обновляем курс
+        await currencyDocRef.update({
+          'rate': _rate,
+        });
+      }
+
+      // Добавляем транзакцию в events с нужными полями
       await FirebaseFirestore.instance
           .collection('users')
           .doc(user.uid)
           .collection('events')
           .add({
-        'title': _isSelling ? 'Продажа $_selectedCurrency' : 'Покупка $_selectedCurrency',
-        'description': '${_isSelling ? "Продано" : "Куплено"} $amount $_selectedCurrency по курсу $_rate. Итог: $_total',
         'currency': _selectedCurrency,
         'date': Timestamp.now(),
         'type': _isSelling ? 'sell' : 'buy',
         'amount': amount,
         'rate': _rate,
         'total': _total,
+        'month': '', // Поле month оставляем пустым, как в базе данных
       });
+
+      // Очищаем поля после успешной транзакции
       _amountController.clear();
       setState(() {
         _total = null;
