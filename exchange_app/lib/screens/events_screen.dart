@@ -327,29 +327,46 @@ class _EventsScreenState extends State<EventsScreen> {
 
                 final events = snapshot.data!.docs;
 
-                // Подсчитываем среднее количество покупок и продаж
-                double totalBuyAmount = 0;
-                double totalSellAmount = 0;
-                int buyCount = 0;
-                int sellCount = 0;
+                // Группировка транзакций по валютам
+                Map<String, Map<String, dynamic>> currencyStats = {};
 
                 for (var eventDoc in events) {
                   final event = eventDoc.data() as Map<String, dynamic>;
                   final type = event['type'] ?? 'custom';
+                  final currency = event['currency'] ?? 'Unknown';
                   final amount = (event['amount'] as num?)?.toDouble() ?? 0.0;
 
+                  // Инициализируем статистику для валюты, если её ещё нет
+                  if (!currencyStats.containsKey(currency)) {
+                    currencyStats[currency] = {
+                      'totalBuyAmount': 0.0,
+                      'totalSellAmount': 0.0,
+                      'buyCount': 0,
+                      'sellCount': 0,
+                    };
+                  }
+
+                  // Обновляем статистику
                   if (type == 'buy') {
-                    totalBuyAmount += amount;
-                    buyCount++;
+                    currencyStats[currency]!['totalBuyAmount'] += amount;
+                    currencyStats[currency]!['buyCount']++;
                   } else if (type == 'sell') {
-                    totalSellAmount += amount;
-                    sellCount++;
+                    currencyStats[currency]!['totalSellAmount'] += amount;
+                    currencyStats[currency]!['sellCount']++;
                   }
                 }
 
-                // Вычисляем среднее количество покупок и продаж
-                final avgBuy = buyCount > 0 ? totalBuyAmount / buyCount : 0.0;
-                final avgSell = sellCount > 0 ? totalSellAmount / sellCount : 0.0;
+                // Вычисляем средние значения для каждой валюты
+                List<Map<String, dynamic>> statsList = [];
+                currencyStats.forEach((currency, stats) {
+                  final avgBuy = stats['buyCount'] > 0 ? stats['totalBuyAmount'] / stats['buyCount'] : 0.0;
+                  final avgSell = stats['sellCount'] > 0 ? stats['totalSellAmount'] / stats['sellCount'] : 0.0;
+                  statsList.add({
+                    'currency': currency,
+                    'avgBuy': avgBuy,
+                    'avgSell': avgSell,
+                  });
+                });
 
                 return Column(
                   children: [
@@ -400,14 +417,34 @@ class _EventsScreenState extends State<EventsScreen> {
                       child: Column(
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
-                          Text(
-                            'Среднее кол-во продаж: ${avgSell.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 16),
+                          const Text(
+                            'Средние значения по валютам:',
+                            style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
                           ),
-                          Text(
-                            'Среднее кол-во покупок: ${avgBuy.toStringAsFixed(2)}',
-                            style: const TextStyle(fontSize: 16),
-                          ),
+                          const SizedBox(height: 8),
+                          if (statsList.isEmpty)
+                            const Text(
+                              'Нет данных для отображения',
+                              style: TextStyle(fontSize: 16),
+                            )
+                          else
+                            SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: DataTable(
+                                columns: const [
+                                  DataColumn(label: Text('Валюта')),
+                                  DataColumn(label: Text('Среднее кол-во продаж')),
+                                  DataColumn(label: Text('Среднее кол-во покупок')),
+                                ],
+                                rows: statsList.map((stat) {
+                                  return DataRow(cells: [
+                                    DataCell(Text(stat['currency'])),
+                                    DataCell(Text(stat['avgSell'].toStringAsFixed(2))),
+                                    DataCell(Text(stat['avgBuy'].toStringAsFixed(2))),
+                                  ]);
+                                }).toList(),
+                              ),
+                            ),
                         ],
                       ),
                     ),
