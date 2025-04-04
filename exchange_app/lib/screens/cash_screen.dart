@@ -1,4 +1,3 @@
-// lib/screens/cash_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:fl_chart/fl_chart.dart';
@@ -8,6 +7,49 @@ import '../models/cash_transaction.dart';
 import '../services/cash_service.dart';
 import '../services/auth_service.dart';
 import '../widgets/app_drawer.dart';
+
+// Виджет индикатора для легенды
+class Indicator extends StatelessWidget {
+  final Color color;
+  final String text;
+  final bool isSquare;
+  final double size;
+  final Color textColor;
+
+  const Indicator({
+    Key? key,
+    required this.color,
+    required this.text,
+    this.isSquare = true,
+    this.size = 16,
+    this.textColor = const Color(0xff505050),
+  }) : super(key: key);
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      children: <Widget>[
+        Container(
+          width: size,
+          height: size,
+          decoration: BoxDecoration(
+            shape: isSquare ? BoxShape.rectangle : BoxShape.circle,
+            color: color,
+          ),
+        ),
+        const SizedBox(width: 4),
+        Text(
+          text,
+          style: TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.bold,
+            color: textColor,
+          ),
+        ),
+      ],
+    );
+  }
+}
 
 class CashScreen extends StatefulWidget {
   const CashScreen({super.key});
@@ -43,14 +85,12 @@ class _CashScreenState extends State<CashScreen> {
     });
   }
 
-  // Метод для получения начальной и конечной даты в зависимости от выбранного периода
   Map<String, dynamic> _getDateRange() {
     final now = DateTime.now();
     DateTime startDate;
     DateTime endDate;
 
     if (_selectedPeriod == 'Ручной выбор') {
-      // Если выбран "Ручной выбор", используем текущие значения _startDate и _endDate
       startDate = _startDate;
       endDate = _endDate;
       if (endDate.isBefore(startDate)) {
@@ -63,7 +103,6 @@ class _CashScreenState extends State<CashScreen> {
         };
       }
     } else if (_selectedPeriod == 'Кастомный период' && _startDateController.text.isNotEmpty && _endDateController.text.isNotEmpty) {
-      // Если выбран "Кастомный период", используем даты из контроллеров
       startDate = DateFormat('dd.MM.yyyy').parse(_startDateController.text);
       endDate = DateFormat('dd.MM.yyyy').parse(_endDateController.text);
       if (endDate.isBefore(startDate)) {
@@ -75,45 +114,43 @@ class _CashScreenState extends State<CashScreen> {
           'end': now,
         };
       }
-      endDate = endDate.add(const Duration(days: 1)); // Включаем весь конечный день
+      endDate = endDate.add(const Duration(days: 1));
     } else if (_selectedPeriod == 'За все время') {
-      startDate = DateTime(2000); // Очень ранняя дата для "За все время"
+      startDate = DateTime(2000);
       endDate = now;
     } else {
       switch (_selectedPeriod) {
         case 'Сегодня':
-          startDate = DateTime(now.year, now.month, now.day); // Начало текущего дня
-          endDate = now; // Текущее время
+          startDate = DateTime(now.year, now.month, now.day);
+          endDate = now;
           break;
         case '3 дня':
-          startDate = now.subtract(const Duration(days: 3)); // Последние 3 дня
+          startDate = now.subtract(const Duration(days: 3));
           endDate = now;
           break;
         case 'Неделя':
-          startDate = now.subtract(const Duration(days: 7)); // Последняя неделя
+          startDate = now.subtract(const Duration(days: 7));
           endDate = now;
           break;
         case 'Месяц':
-          // Предыдущий календарный месяц
-          final previousMonth = DateTime(now.year, now.month - 1, 1); // 1-е число предыдущего месяца
+          final previousMonth = DateTime(now.year, now.month - 1, 1);
           startDate = previousMonth;
-          endDate = DateTime(now.year, now.month, 0); // Последний день предыдущего месяца
+          endDate = DateTime(now.year, now.month, 0);
           break;
         default:
-          startDate = now.subtract(const Duration(days: 30)); // На всякий случай, если что-то пойдёт не так
+          startDate = now.subtract(const Duration(days: 30));
           endDate = now;
           break;
       }
     }
 
-    print('Выбранный период: $_selectedPeriod, Диапазон: $startDate - $endDate'); // Отладочный вывод
+    print('Выбранный период: $_selectedPeriod, Диапазон: $startDate - $endDate');
     return {
       'start': startDate,
       'end': endDate,
     };
   }
 
-  // Метод для выбора даты (для ручного выбора и кастомного периода)
   Future<void> _selectDate(BuildContext context, bool isStart) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -158,6 +195,9 @@ class _CashScreenState extends State<CashScreen> {
       }
     }
 
+    double totalBuyAmount = buyAmounts.values.fold(0, (sum, amount) => sum + amount);
+    double totalSellAmount = sellAmounts.values.fold(0, (sum, amount) => sum + amount);
+
     return {
       'buyAmounts': buyAmounts,
       'sellAmounts': sellAmounts,
@@ -165,6 +205,56 @@ class _CashScreenState extends State<CashScreen> {
       'sellCounts': sellCounts,
       'totalTurnover': totalTurnover,
       'totalProfit': totalProfit,
+      'totalBuyAmount': totalBuyAmount,
+      'totalSellAmount': totalSellAmount,
+    };
+  }
+
+  Map<String, dynamic> _calculateDailyStats(List<CashTransaction> transactions, DateTime startDate, DateTime endDate) {
+    Map<String, Map<DateTime, double>> dailyBuyAmounts = {};
+    Map<String, Map<DateTime, double>> dailySellAmounts = {};
+    Map<String, Map<DateTime, int>> dailyBuyCounts = {};
+    Map<String, Map<DateTime, int>> dailySellCounts = {};
+    Map<String, Map<DateTime, double>> dailyProfits = {};
+
+    // Инициализация данных для каждого дня
+    for (var currency in transactions.map((tx) => tx.currency).toSet()) {
+      dailyBuyAmounts[currency] = {};
+      dailySellAmounts[currency] = {};
+      dailyBuyCounts[currency] = {};
+      dailySellCounts[currency] = {};
+      dailyProfits[currency] = {};
+
+      DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+      while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+        dailyBuyAmounts[currency]![currentDate] = 0;
+        dailySellAmounts[currency]![currentDate] = 0;
+        dailyBuyCounts[currency]![currentDate] = 0;
+        dailySellCounts[currency]![currentDate] = 0;
+        dailyProfits[currency]![currentDate] = 0;
+        currentDate = currentDate.add(const Duration(days: 1));
+      }
+    }
+
+    // Заполнение данных
+    for (var tx in transactions) {
+      DateTime txDate = DateTime(tx.transactionDate.year, tx.transactionDate.month, tx.transactionDate.day);
+      if (tx.type == 'buy') {
+        dailyBuyAmounts[tx.currency]![txDate] = (dailyBuyAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailyBuyCounts[tx.currency]![txDate] = (dailyBuyCounts[tx.currency]![txDate] ?? 0) + 1;
+      } else if (tx.type == 'sell') {
+        dailySellAmounts[tx.currency]![txDate] = (dailySellAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailySellCounts[tx.currency]![txDate] = (dailySellCounts[tx.currency]![txDate] ?? 0) + 1;
+        dailyProfits[tx.currency]![txDate] = (dailyProfits[tx.currency]![txDate] ?? 0) + tx.total;
+      }
+    }
+
+    return {
+      'dailyBuyAmounts': dailyBuyAmounts,
+      'dailySellAmounts': dailySellAmounts,
+      'dailyBuyCounts': dailyBuyCounts,
+      'dailySellCounts': dailySellCounts,
+      'dailyProfits': dailyProfits,
     };
   }
 
@@ -186,7 +276,6 @@ class _CashScreenState extends State<CashScreen> {
       body: _isAuthenticated
           ? Column(
               children: [
-                // Выбор периода
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                   child: Column(
@@ -219,7 +308,6 @@ class _CashScreenState extends State<CashScreen> {
                           ),
                         ],
                       ),
-                      // Поля для кастомного периода или ручного выбора
                       if (_selectedPeriod == 'Кастомный период' || _selectedPeriod == 'Ручной выбор') ...[
                         const SizedBox(height: 8),
                         Row(
@@ -280,13 +368,13 @@ class _CashScreenState extends State<CashScreen> {
                     ],
                   ),
                 ),
-                // Основной контент
                 Expanded(
                   child: SingleChildScrollView(
                     padding: const EdgeInsets.all(16.0),
                     child: StreamBuilder<List<CashTransaction>>(
                       stream: () {
                         final dateRange = _getDateRange();
+                        print('Диапазон дат: ${dateRange['start']} - ${dateRange['end']}');
                         return _cashService.getTransactions(dateRange['start'], dateRange['end']);
                       }(),
                       builder: (context, snapshot) {
@@ -301,7 +389,11 @@ class _CashScreenState extends State<CashScreen> {
                         }
 
                         final transactions = snapshot.data!;
+                        final dateRange = _getDateRange();
+                        final startDate = dateRange['start'] as DateTime;
+                        final endDate = dateRange['end'] as DateTime;
                         final stats = _calculateStats(transactions);
+                        final dailyStats = _calculateDailyStats(transactions, startDate, endDate);
 
                         final buyAmounts = stats['buyAmounts'] as Map<String, double>;
                         final sellAmounts = stats['sellAmounts'] as Map<String, double>;
@@ -309,11 +401,16 @@ class _CashScreenState extends State<CashScreen> {
                         final sellCounts = stats['sellCounts'] as Map<String, int>;
                         final totalTurnover = stats['totalTurnover'] as double;
                         final totalProfit = stats['totalProfit'] as double;
+                        final totalBuyAmount = stats['totalBuyAmount'] as double;
+                        final totalSellAmount = stats['totalSellAmount'] as double;
 
-                        List<String> currencies = buyAmounts.keys
-                            .followedBy(sellAmounts.keys)
-                            .toSet()
-                            .toList();
+                        final dailyBuyAmounts = dailyStats['dailyBuyAmounts'] as Map<String, Map<DateTime, double>>;
+                        final dailySellAmounts = dailyStats['dailySellAmounts'] as Map<String, Map<DateTime, double>>;
+                        final dailyBuyCounts = dailyStats['dailyBuyCounts'] as Map<String, Map<DateTime, int>>;
+                        final dailySellCounts = dailyStats['dailySellCounts'] as Map<String, Map<DateTime, int>>;
+                        final dailyProfits = dailyStats['dailyProfits'] as Map<String, Map<DateTime, double>>;
+
+                        List<String> currencies = buyAmounts.keys.followedBy(sellAmounts.keys).toSet().toList();
                         List<DataRow> rows = currencies.map((currency) {
                           double buyAvg = (buyCounts[currency] ?? 0) > 0
                               ? (buyAmounts[currency] ?? 0) / buyCounts[currency]!
@@ -321,8 +418,7 @@ class _CashScreenState extends State<CashScreen> {
                           double sellAvg = (sellCounts[currency] ?? 0) > 0
                               ? (sellAmounts[currency] ?? 0) / sellCounts[currency]!
                               : 0;
-                          double profit = (sellAmounts[currency] ?? 0) -
-                              (buyAmounts[currency] ?? 0);
+                          double profit = (sellAmounts[currency] ?? 0) - (buyAmounts[currency] ?? 0);
 
                           return DataRow(cells: [
                             DataCell(Text(currency)),
@@ -336,53 +432,685 @@ class _CashScreenState extends State<CashScreen> {
                           ]);
                         }).toList();
 
-                        List<PieChartSectionData> pieSections = [];
+                        List<PieChartSectionData> buyCountSections = [];
+                        List<PieChartSectionData> sellCountSections = [];
+                        List<PieChartSectionData> buyAmountSections = [];
+                        List<PieChartSectionData> sellAmountSections = [];
+                        List<PieChartSectionData> profitSections = [];
+
+                        // Для легенды
+                        List<Widget> buyCountIndicators = [];
+                        List<Widget> sellCountIndicators = [];
+                        List<Widget> buyAmountIndicators = [];
+                        List<Widget> sellAmountIndicators = [];
+                        List<Widget> profitIndicators = [];
+
+                        // Для гистограмм
+                        List<Widget> buyCountBarCharts = [];
+                        List<Widget> sellCountBarCharts = [];
+                        List<Widget> buyAmountBarCharts = [];
+                        List<Widget> sellAmountBarCharts = [];
+                        List<Widget> profitBarCharts = [];
+
+                        // Цвета для валют
+                        Map<String, Color> currencyColors = {};
+                        currencies.asMap().forEach((index, currency) {
+                          currencyColors[currency] = Colors.primaries[index % Colors.primaries.length];
+                        });
+
                         if (_chartType == 'Количество операций') {
-                          pieSections = currencies.asMap().entries.map((entry) {
+                          double totalBuyCount = buyCounts.values.fold(0, (sum, count) => sum + count).toDouble();
+                          double totalSellCount = sellCounts.values.fold(0, (sum, count) => sum + count).toDouble();
+
+                          buyCountSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double value = (buyCounts[currency] ?? 0) + (sellCounts[currency] ?? 0).toDouble();
+                            double value = (buyCounts[currency] ?? 0).toDouble();
+                            double percentage = totalBuyCount > 0 ? (value / totalBuyCount * 100) : 0;
+                            Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
+                            buyCountIndicators.add(
+                              Indicator(
+                                color: sectionColor,
+                                text: '$currency: ${value.toStringAsFixed(0)} (${percentage.toStringAsFixed(0)}%)',
+                                isSquare: true,
+                              ),
+                            );
                             return PieChartSectionData(
-                              color: Colors.primaries[idx % Colors.primaries.length],
-                              value: value,
-                              title: '$currency\n$value',
+                              color: sectionColor,
+                              value: value > 0 ? value : 0.001,
+                              title: currency,
                               radius: _touchedIndex == idx ? 60 : 50,
                               titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
                             );
                           }).toList();
-                        } else if (_chartType == 'Средние показатели') {
-                          pieSections = currencies.asMap().entries.map((entry) {
+
+                          sellCountSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double buyAvg = (buyCounts[currency] ?? 0) > 0
-                                ? (buyAmounts[currency] ?? 0) / buyCounts[currency]!
-                                : 0;
-                            double sellAvg = (sellCounts[currency] ?? 0) > 0
-                                ? (sellAmounts[currency] ?? 0) / sellCounts[currency]!
-                                : 0;
-                            double avg = (buyAvg + sellAvg) / 2;
+                            double value = (sellCounts[currency] ?? 0).toDouble();
+                            double percentage = totalSellCount > 0 ? (value / totalSellCount * 100) : 0;
+                            Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
+                            sellCountIndicators.add(
+                              Indicator(
+                                color: sectionColor,
+                                text: '$currency: ${value.toStringAsFixed(0)} (${percentage.toStringAsFixed(0)}%)',
+                                isSquare: true,
+                              ),
+                            );
                             return PieChartSectionData(
-                              color: Colors.primaries[idx % Colors.primaries.length],
-                              value: avg,
-                              title: '$currency\n${avg.toStringAsFixed(2)}',
+                              color: sectionColor,
+                              value: value > 0 ? value : 0.001,
+                              title: currency,
                               radius: _touchedIndex == idx ? 60 : 50,
                               titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
                             );
                           }).toList();
-                        } else if (_chartType == 'Прибыль') {
-                          pieSections = currencies.asMap().entries.map((entry) {
+
+                          // Гистограмма для покупок (все валюты вместе)
+                          List<BarChartGroupData> buyCountBarGroups = [];
+                          DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+                          int dayIndex = 0;
+                          while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+                            List<BarChartRodData> rods = [];
+                            for (String currency in currencies) {
+                              double buyValue = (dailyBuyCounts[currency]![currentDate] ?? 0).toDouble();
+                              rods.add(
+                                BarChartRodData(
+                                  toY: buyValue,
+                                  color: currencyColors[currency]!,
+                                  width: 10,
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              );
+                            }
+                            buyCountBarGroups.add(
+                              BarChartGroupData(
+                                x: dayIndex,
+                                barRods: rods,
+                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                              ),
+                            );
+                            currentDate = currentDate.add(const Duration(days: 1));
+                            dayIndex++;
+                          }
+
+                          buyCountBarCharts.add(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Покупки - Количество операций', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  children: currencies.map((currency) {
+                                    return Indicator(
+                                      color: currencyColors[currency]!,
+                                      text: currency,
+                                      isSquare: true,
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 200,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: buyCountBarGroups.length * 40.0 * currencies.length, // Учитываем количество валют
+                                      child: BarChart(
+                                        BarChartData(
+                                          barGroups: buyCountBarGroups,
+                                          titlesData: FlTitlesData(
+                                            bottomTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                getTitlesWidget: (value, meta) {
+                                                  DateTime date = startDate.add(Duration(days: value.toInt()));
+                                                  return Text(
+                                                    DateFormat('dd').format(date),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            leftTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                reservedSize: 40,
+                                                getTitlesWidget: (value, meta) {
+                                                  return Text(
+                                                    value.toInt().toString(),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                          ),
+                                          borderData: FlBorderData(show: true),
+                                          barTouchData: BarTouchData(
+                                            enabled: true,
+                                            touchTooltipData: BarTouchTooltipData(
+                                              getTooltipColor: (group) => Colors.grey.shade800,
+                                              tooltipPadding: const EdgeInsets.all(8),
+                                              tooltipMargin: 8,
+                                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                                String currency = currencies[rodIndex];
+                                                return BarTooltipItem(
+                                                  '$currency: ${rod.toY.toStringAsFixed(0)}',
+                                                  const TextStyle(color: Colors.white),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          // Гистограмма для продаж (все валюты вместе)
+                          List<BarChartGroupData> sellCountBarGroups = [];
+                          currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+                          dayIndex = 0;
+                          while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+                            List<BarChartRodData> rods = [];
+                            for (String currency in currencies) {
+                              double sellValue = (dailySellCounts[currency]![currentDate] ?? 0).toDouble();
+                              rods.add(
+                                BarChartRodData(
+                                  toY: sellValue,
+                                  color: currencyColors[currency]!,
+                                  width: 10,
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              );
+                            }
+                            sellCountBarGroups.add(
+                              BarChartGroupData(
+                                x: dayIndex,
+                                barRods: rods,
+                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                              ),
+                            );
+                            currentDate = currentDate.add(const Duration(days: 1));
+                            dayIndex++;
+                          }
+
+                          sellCountBarCharts.add(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Продажи - Количество операций', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  children: currencies.map((currency) {
+                                    return Indicator(
+                                      color: currencyColors[currency]!,
+                                      text: currency,
+                                      isSquare: true,
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 200,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: sellCountBarGroups.length * 40.0 * currencies.length,
+                                      child: BarChart(
+                                        BarChartData(
+                                          barGroups: sellCountBarGroups,
+                                          titlesData: FlTitlesData(
+                                            bottomTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                getTitlesWidget: (value, meta) {
+                                                  DateTime date = startDate.add(Duration(days: value.toInt()));
+                                                  return Text(
+                                                    DateFormat('dd').format(date),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            leftTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                reservedSize: 40,
+                                                getTitlesWidget: (value, meta) {
+                                                  return Text(
+                                                    value.toInt().toString(),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                          ),
+                                          borderData: FlBorderData(show: true),
+                                          barTouchData: BarTouchData(
+                                            enabled: true,
+                                            touchTooltipData: BarTouchTooltipData(
+                                              getTooltipColor: (group) => Colors.grey.shade800,
+                                              tooltipPadding: const EdgeInsets.all(8),
+                                              tooltipMargin: 8,
+                                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                                String currency = currencies[rodIndex];
+                                                return BarTooltipItem(
+                                                  '$currency: ${rod.toY.toStringAsFixed(0)}',
+                                                  const TextStyle(color: Colors.white),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        if (_chartType == 'Сумма покупок и продаж') {
+                          buyAmountSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double profit = (sellAmounts[currency] ?? 0) -
-                                (buyAmounts[currency] ?? 0);
+                            double value = buyAmounts[currency] ?? 0;
+                            double percentage = totalBuyAmount > 0 ? (value / totalBuyAmount * 100) : 0;
+                            Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
+                            buyAmountIndicators.add(
+                              Indicator(
+                                color: sectionColor,
+                                text: '$currency: ${value.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                isSquare: true,
+                              ),
+                            );
                             return PieChartSectionData(
-                              color: Colors.primaries[idx % Colors.primaries.length],
-                              value: profit > 0 ? profit : 0,
-                              title: '$currency\n${profit.toStringAsFixed(2)}',
+                              color: sectionColor,
+                              value: value > 0 ? value : 0.001,
+                              title: currency,
                               radius: _touchedIndex == idx ? 60 : 50,
                               titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
                             );
                           }).toList();
+
+                          sellAmountSections = currencies.asMap().entries.map((entry) {
+                            int idx = entry.key;
+                            String currency = entry.value;
+                            double value = sellAmounts[currency] ?? 0;
+                            double percentage = totalSellAmount > 0 ? (value / totalSellAmount * 100) : 0;
+                            Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
+                            sellAmountIndicators.add(
+                              Indicator(
+                                color: sectionColor,
+                                text: '$currency: ${value.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                isSquare: true,
+                              ),
+                            );
+                            return PieChartSectionData(
+                              color: sectionColor,
+                              value: value > 0 ? value : 0.001,
+                              title: currency,
+                              radius: _touchedIndex == idx ? 60 : 50,
+                              titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
+                            );
+                          }).toList();
+
+                          // Гистограмма для покупок (все валюты вместе)
+                          List<BarChartGroupData> buyAmountBarGroups = [];
+                          DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+                          int dayIndex = 0;
+                          while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+                            List<BarChartRodData> rods = [];
+                            for (String currency in currencies) {
+                              double buyValue = dailyBuyAmounts[currency]![currentDate] ?? 0;
+                              rods.add(
+                                BarChartRodData(
+                                  toY: buyValue,
+                                  color: currencyColors[currency]!,
+                                  width: 10,
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              );
+                            }
+                            buyAmountBarGroups.add(
+                              BarChartGroupData(
+                                x: dayIndex,
+                                barRods: rods,
+                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                              ),
+                            );
+                            currentDate = currentDate.add(const Duration(days: 1));
+                            dayIndex++;
+                          }
+
+                          buyAmountBarCharts.add(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Сумма покупок', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  children: currencies.map((currency) {
+                                    return Indicator(
+                                      color: currencyColors[currency]!,
+                                      text: currency,
+                                      isSquare: true,
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 200,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: buyAmountBarGroups.length * 40.0 * currencies.length,
+                                      child: BarChart(
+                                        BarChartData(
+                                          barGroups: buyAmountBarGroups,
+                                          titlesData: FlTitlesData(
+                                            bottomTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                getTitlesWidget: (value, meta) {
+                                                  DateTime date = startDate.add(Duration(days: value.toInt()));
+                                                  return Text(
+                                                    DateFormat('dd').format(date),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            leftTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                reservedSize: 40,
+                                                getTitlesWidget: (value, meta) {
+                                                  return Text(
+                                                    value.toInt().toString(),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                          ),
+                                          borderData: FlBorderData(show: true),
+                                          barTouchData: BarTouchData(
+                                            enabled: true,
+                                            touchTooltipData: BarTouchTooltipData(
+                                              getTooltipColor: (group) => Colors.grey.shade800,
+                                              tooltipPadding: const EdgeInsets.all(8),
+                                              tooltipMargin: 8,
+                                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                                String currency = currencies[rodIndex];
+                                                return BarTooltipItem(
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  const TextStyle(color: Colors.white),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+
+                          // Гистограмма для продаж (все валюты вместе)
+                          List<BarChartGroupData> sellAmountBarGroups = [];
+                          currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+                          dayIndex = 0;
+                          while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+                            List<BarChartRodData> rods = [];
+                            for (String currency in currencies) {
+                              double sellValue = dailySellAmounts[currency]![currentDate] ?? 0;
+                              rods.add(
+                                BarChartRodData(
+                                  toY: sellValue,
+                                  color: currencyColors[currency]!,
+                                  width: 10,
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              );
+                            }
+                            sellAmountBarGroups.add(
+                              BarChartGroupData(
+                                x: dayIndex,
+                                barRods: rods,
+                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                              ),
+                            );
+                            currentDate = currentDate.add(const Duration(days: 1));
+                            dayIndex++;
+                          }
+
+                          sellAmountBarCharts.add(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Сумма продаж', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  children: currencies.map((currency) {
+                                    return Indicator(
+                                      color: currencyColors[currency]!,
+                                      text: currency,
+                                      isSquare: true,
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 200,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: sellAmountBarGroups.length * 40.0 * currencies.length,
+                                      child: BarChart(
+                                        BarChartData(
+                                          barGroups: sellAmountBarGroups,
+                                          titlesData: FlTitlesData(
+                                            bottomTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                getTitlesWidget: (value, meta) {
+                                                  DateTime date = startDate.add(Duration(days: value.toInt()));
+                                                  return Text(
+                                                    DateFormat('dd').format(date),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            leftTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                reservedSize: 40,
+                                                getTitlesWidget: (value, meta) {
+                                                  return Text(
+                                                    value.toInt().toString(),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                          ),
+                                          borderData: FlBorderData(show: true),
+                                          barTouchData: BarTouchData(
+                                            enabled: true,
+                                            touchTooltipData: BarTouchTooltipData(
+                                              getTooltipColor: (group) => Colors.grey.shade800,
+                                              tooltipPadding: const EdgeInsets.all(8),
+                                              tooltipMargin: 8,
+                                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                                String currency = currencies[rodIndex];
+                                                return BarTooltipItem(
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  const TextStyle(color: Colors.white),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
+                        }
+
+                        if (_chartType == 'Прибыль') {
+                          double totalProfitForPercentage = currencies.fold(0, (sum, curr) => sum + ((sellAmounts[curr] ?? 0) - (buyAmounts[curr] ?? 0)));
+                          profitSections = currencies.asMap().entries.map((entry) {
+                            int idx = entry.key;
+                            String currency = entry.value;
+                            double profit = (sellAmounts[currency] ?? 0) - (buyAmounts[currency] ?? 0);
+                            double percentage = totalProfitForPercentage > 0 ? (profit / totalProfitForPercentage * 100) : 0;
+                            Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
+                            profitIndicators.add(
+                              Indicator(
+                                color: sectionColor,
+                                text: '$currency: ${profit.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                isSquare: true,
+                              ),
+                            );
+                            return PieChartSectionData(
+                              color: sectionColor,
+                              value: profit > 0 ? profit : 0.001,
+                              title: currency,
+                              radius: _touchedIndex == idx ? 60 : 50,
+                              titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
+                            );
+                          }).toList();
+
+                          // Гистограмма для прибыли (все валюты вместе)
+                          List<BarChartGroupData> profitBarGroups = [];
+                          DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+                          int dayIndex = 0;
+                          while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+                            List<BarChartRodData> rods = [];
+                            for (String currency in currencies) {
+                              double profitValue = dailyProfits[currency]![currentDate] ?? 0;
+                              rods.add(
+                                BarChartRodData(
+                                  toY: profitValue,
+                                  color: currencyColors[currency]!,
+                                  width: 10,
+                                  borderRadius: BorderRadius.zero,
+                                ),
+                              );
+                            }
+                            profitBarGroups.add(
+                              BarChartGroupData(
+                                x: dayIndex,
+                                barRods: rods,
+                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                              ),
+                            );
+                            currentDate = currentDate.add(const Duration(days: 1));
+                            dayIndex++;
+                          }
+
+                          profitBarCharts.add(
+                            Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text('Прибыль', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const SizedBox(height: 8),
+                                Wrap(
+                                  spacing: 16,
+                                  children: currencies.map((currency) {
+                                    return Indicator(
+                                      color: currencyColors[currency]!,
+                                      text: currency,
+                                      isSquare: true,
+                                    );
+                                  }).toList(),
+                                ),
+                                const SizedBox(height: 8),
+                                SizedBox(
+                                  height: 200,
+                                  child: SingleChildScrollView(
+                                    scrollDirection: Axis.horizontal,
+                                    child: SizedBox(
+                                      width: profitBarGroups.length * 40.0 * currencies.length,
+                                      child: BarChart(
+                                        BarChartData(
+                                          barGroups: profitBarGroups,
+                                          titlesData: FlTitlesData(
+                                            bottomTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                getTitlesWidget: (value, meta) {
+                                                  DateTime date = startDate.add(Duration(days: value.toInt()));
+                                                  return Text(
+                                                    DateFormat('dd').format(date),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            leftTitles: AxisTitles(
+                                              sideTitles: SideTitles(
+                                                showTitles: true,
+                                                reservedSize: 40,
+                                                getTitlesWidget: (value, meta) {
+                                                  return Text(
+                                                    value.toInt().toString(),
+                                                    style: const TextStyle(fontSize: 10),
+                                                  );
+                                                },
+                                              ),
+                                            ),
+                                            topTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                            rightTitles: const AxisTitles(sideTitles: SideTitles(showTitles: false)),
+                                          ),
+                                          borderData: FlBorderData(show: true),
+                                          barTouchData: BarTouchData(
+                                            enabled: true,
+                                            touchTooltipData: BarTouchTooltipData(
+                                              getTooltipColor: (group) => Colors.grey.shade800,
+                                              tooltipPadding: const EdgeInsets.all(8),
+                                              tooltipMargin: 8,
+                                              getTooltipItem: (group, groupIndex, rod, rodIndex) {
+                                                String currency = currencies[rodIndex];
+                                                return BarTooltipItem(
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  const TextStyle(color: Colors.white),
+                                                );
+                                              },
+                                            ),
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ],
+                            ),
+                          );
                         }
 
                         return Column(
@@ -411,7 +1139,7 @@ class _CashScreenState extends State<CashScreen> {
                               value: _chartType,
                               items: const [
                                 DropdownMenuItem(value: 'Количество операций', child: Text('Количество операций')),
-                                DropdownMenuItem(value: 'Средние показатели', child: Text('Средние показатели')),
+                                DropdownMenuItem(value: 'Сумма покупок и продаж', child: Text('Сумма покупок и продаж')),
                                 DropdownMenuItem(value: 'Прибыль', child: Text('Прибыль')),
                               ],
                               onChanged: (value) {
@@ -423,29 +1151,246 @@ class _CashScreenState extends State<CashScreen> {
                             ),
                             const SizedBox(height: 20),
                             const Text('Диаграмма:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            SizedBox(
-                              height: 200,
-                              child: PieChart(
-                                PieChartData(
-                                  sections: pieSections,
-                                  sectionsSpace: 2,
-                                  centerSpaceRadius: 40,
-                                  pieTouchData: PieTouchData(
-                                    touchCallback: (FlTouchEvent event, pieTouchResponse) {
-                                      setState(() {
-                                        if (!event.isInterestedForInteractions ||
-                                            pieTouchResponse == null ||
-                                            pieTouchResponse.touchedSection == null) {
-                                          _touchedIndex = -1;
-                                          return;
-                                        }
-                                        _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
-                                      });
-                                    },
+                            if (_chartType == 'Количество операций') ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  Column(
+                                    children: [
+                                      const Text('Покупки', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      SizedBox(
+                                        height: 200,
+                                        width: 200,
+                                        child: PieChart(
+                                          PieChartData(
+                                            sections: buyCountSections,
+                                            sectionsSpace: 2,
+                                            centerSpaceRadius: 40,
+                                            startDegreeOffset: 90,
+                                            pieTouchData: PieTouchData(
+                                              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                                if (event is FlTapDownEvent) {
+                                                  setState(() {
+                                                    if (pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                                      _touchedIndex = -1;
+                                                      return;
+                                                    }
+                                                    _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                                  });
+                                                }
+                                                if (event is FlTapUpEvent) {
+                                                  setState(() {
+                                                    _touchedIndex = -1;
+                                                  });
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                          swapAnimationDuration: const Duration(milliseconds: 800),
+                                          swapAnimationCurve: Curves.easeInOut,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: buyCountIndicators,
+                                      ),
+                                    ],
                                   ),
-                                ),
+                                  Column(
+                                    children: [
+                                      const Text('Продажи', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      SizedBox(
+                                        height: 200,
+                                        width: 200,
+                                        child: PieChart(
+                                          PieChartData(
+                                            sections: sellCountSections,
+                                            sectionsSpace: 2,
+                                            centerSpaceRadius: 40,
+                                            startDegreeOffset: 90,
+                                            pieTouchData: PieTouchData(
+                                              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                                if (event is FlTapDownEvent) {
+                                                  setState(() {
+                                                    if (pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                                      _touchedIndex = -1;
+                                                      return;
+                                                    }
+                                                    _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                                  });
+                                                }
+                                                if (event is FlTapUpEvent) {
+                                                  setState(() {
+                                                    _touchedIndex = -1;
+                                                  });
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                          swapAnimationDuration: const Duration(milliseconds: 800),
+                                          swapAnimationCurve: Curves.easeInOut,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: sellCountIndicators,
+                                      ),
+                                    ],
+                                  ),
+                                ],
                               ),
-                            ),
+                              const SizedBox(height: 20),
+                              const Text('Гистограммы по дням:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              ...buyCountBarCharts,
+                              const SizedBox(height: 20),
+                              ...sellCountBarCharts,
+                            ],
+                            if (_chartType == 'Сумма покупок и продаж') ...[
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                children: [
+                                  Column(
+                                    children: [
+                                      const Text('Сумма покупок', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      SizedBox(
+                                        height: 200,
+                                        width: 200,
+                                        child: PieChart(
+                                          PieChartData(
+                                            sections: buyAmountSections,
+                                            sectionsSpace: 2,
+                                            centerSpaceRadius: 40,
+                                            startDegreeOffset: 90,
+                                            pieTouchData: PieTouchData(
+                                              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                                if (event is FlTapDownEvent) {
+                                                  setState(() {
+                                                    if (pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                                      _touchedIndex = -1;
+                                                      return;
+                                                    }
+                                                    _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                                  });
+                                                }
+                                                if (event is FlTapUpEvent) {
+                                                  setState(() {
+                                                    _touchedIndex = -1;
+                                                  });
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                          swapAnimationDuration: const Duration(milliseconds: 800),
+                                          swapAnimationCurve: Curves.easeInOut,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: buyAmountIndicators,
+                                      ),
+                                    ],
+                                  ),
+                                  Column(
+                                    children: [
+                                      const Text('Сумма продаж', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                                      SizedBox(
+                                        height: 200,
+                                        width: 200,
+                                        child: PieChart(
+                                          PieChartData(
+                                            sections: sellAmountSections,
+                                            sectionsSpace: 2,
+                                            centerSpaceRadius: 40,
+                                            startDegreeOffset: 90,
+                                            pieTouchData: PieTouchData(
+                                              touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                                if (event is FlTapDownEvent) {
+                                                  setState(() {
+                                                    if (pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                                      _touchedIndex = -1;
+                                                      return;
+                                                    }
+                                                    _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                                  });
+                                                }
+                                                if (event is FlTapUpEvent) {
+                                                  setState(() {
+                                                    _touchedIndex = -1;
+                                                  });
+                                                }
+                                              },
+                                            ),
+                                          ),
+                                          swapAnimationDuration: const Duration(milliseconds: 800),
+                                          swapAnimationCurve: Curves.easeInOut,
+                                        ),
+                                      ),
+                                      const SizedBox(height: 8),
+                                      Column(
+                                        crossAxisAlignment: CrossAxisAlignment.start,
+                                        children: sellAmountIndicators,
+                                      ),
+                                    ],
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              const Text('Гистограммы по дням:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              ...buyAmountBarCharts,
+                              const SizedBox(height: 20),
+                              ...sellAmountBarCharts,
+                            ],
+                            if (_chartType == 'Прибыль') ...[
+                              Column(
+                                children: [
+                                  SizedBox(
+                                    height: 200,
+                                    child: PieChart(
+                                      PieChartData(
+                                        sections: profitSections,
+                                        sectionsSpace: 2,
+                                        centerSpaceRadius: 40,
+                                        startDegreeOffset: 90,
+                                        pieTouchData: PieTouchData(
+                                          touchCallback: (FlTouchEvent event, pieTouchResponse) {
+                                            if (event is FlTapDownEvent) {
+                                              setState(() {
+                                                if (pieTouchResponse == null || pieTouchResponse.touchedSection == null) {
+                                                  _touchedIndex = -1;
+                                                  return;
+                                                }
+                                                _touchedIndex = pieTouchResponse.touchedSection!.touchedSectionIndex;
+                                              });
+                                            }
+                                            if (event is FlTapUpEvent) {
+                                              setState(() {
+                                                _touchedIndex = -1;
+                                              });
+                                            }
+                                          },
+                                        ),
+                                      ),
+                                      swapAnimationDuration: const Duration(milliseconds: 800),
+                                      swapAnimationCurve: Curves.easeInOut,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: profitIndicators,
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 20),
+                              const Text('Гистограммы по дням:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                              const SizedBox(height: 10),
+                              ...profitBarCharts,
+                            ],
                             const SizedBox(height: 20),
                             const Text('Итоги:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                             Text('Общий оборот: ${totalTurnover.toStringAsFixed(2)}'),
