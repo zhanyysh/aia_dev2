@@ -2,8 +2,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:exchange_app/services/auth_service.dart';
-import 'package:exchange_app/widgets/app_drawer.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -13,7 +11,6 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
-  final AuthService _authService = AuthService();
   final TextEditingController _amountController = TextEditingController();
   String? _selectedCurrency;
   double? _rate;
@@ -130,7 +127,6 @@ class _MainScreenState extends State<MainScreen> {
         backgroundColor: Colors.blueAccent,
         elevation: 0,
       ),
-      drawer: AppDrawer(currentRoute: 'main', authService: _authService),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

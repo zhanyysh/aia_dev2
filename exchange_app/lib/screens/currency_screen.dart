@@ -1,8 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:exchange_app/services/auth_service.dart';
-import 'package:exchange_app/widgets/app_drawer.dart';
 
 class CurrencyScreen extends StatefulWidget {
   const CurrencyScreen({super.key});
@@ -16,7 +14,6 @@ class _CurrencyScreenState extends State<CurrencyScreen> {
   final TextEditingController _symbolController = TextEditingController();
   final TextEditingController _editNameController = TextEditingController();
   final TextEditingController _editSymbolController = TextEditingController();
-  final AuthService _authService = AuthService();
   String? _selectedCurrencyId;
 
   Future<void> _addCurrency(BuildContext dialogContext) async {
@@ -264,7 +261,6 @@ class _CurrencyScreenState extends State<CurrencyScreen> {
         backgroundColor: Colors.blueAccent,
         elevation: 0,
       ),
-      drawer: AppDrawer(currentRoute: 'currencies', authService: _authService),
       body: Container(
         decoration: BoxDecoration(
           gradient: LinearGradient(

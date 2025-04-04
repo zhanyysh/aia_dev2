@@ -5,7 +5,6 @@ import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cash_transaction.dart';
 import '../services/cash_service.dart';
 import '../services/auth_service.dart';
-import '../widgets/app_drawer.dart';
 
 // Виджет индикатора для легенды
 class Indicator extends StatelessWidget {
@@ -271,7 +270,6 @@ class _CashScreenState extends State<CashScreen> {
         title: const Text('Отчёт по кассе'),
         backgroundColor: Colors.blueAccent,
       ),
-      drawer: AppDrawer(currentRoute: 'cash', authService: _authService),
       body: _isAuthenticated
           ? Column(
               children: [

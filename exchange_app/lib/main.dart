@@ -1,8 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:exchange_app/screens/home_screen.dart';
 import 'package:exchange_app/screens/login_screen.dart';
 import 'package:exchange_app/screens/signup_screen.dart';
-import 'package:exchange_app/screens/main_screen.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart' show kIsWeb;
 
 void main() {
@@ -42,16 +43,30 @@ class InitializeFirebase extends StatelessWidget {
             body: Center(child: Text('Ошибка: ${snapshot.error}')),
           );
         }
-        return MaterialApp(
-          title: 'Exchange App',
-          theme: ThemeData(
-            primarySwatch: Colors.blue,
-          ),
-          initialRoute: '/login',
-          routes: {
-            '/login': (context) => const LoginScreen(),
-            '/signup': (context) => const SignUpScreen(),
-            '/main': (context) => const MainScreen(),
+        // После успешной инициализации Firebase проверяем состояние авторизации
+        return StreamBuilder<User?>(
+          stream: FirebaseAuth.instance.authStateChanges(),
+          builder: (context, snapshot) {
+            if (snapshot.connectionState == ConnectionState.waiting) {
+              return const Center(child: CircularProgressIndicator());
+            }
+            // Если пользователь авторизован, показываем HomeScreen
+            if (snapshot.hasData) {
+              return const HomeScreen();
+            }
+            // Если пользователь не авторизован, показываем экран логина
+            return MaterialApp(
+              title: 'Exchange App',
+              theme: ThemeData(
+                primarySwatch: Colors.blue,
+              ),
+              initialRoute: '/login',
+              routes: {
+                '/login': (context) => const LoginScreen(),
+                '/signup': (context) => const SignUpScreen(),
+                '/main': (context) => const HomeScreen(), // Перенаправляем /main на HomeScreen
+              },
+            );
           },
         );
       },

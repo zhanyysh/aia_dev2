@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:exchange_app/services/auth_service.dart';
-import 'package:exchange_app/widgets/app_drawer.dart';
 import 'package:intl/intl.dart'; // Для форматирования даты
 
 class EventsScreen extends StatefulWidget {
@@ -156,7 +155,6 @@ class _EventsScreenState extends State<EventsScreen> {
         backgroundColor: Colors.blueAccent,
         elevation: 0,
       ),
-      drawer: AppDrawer(currentRoute: 'events', authService: _authService),
       body: Column(
         children: [
           // Выбор периода
