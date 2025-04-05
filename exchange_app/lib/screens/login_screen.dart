@@ -1,3 +1,4 @@
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:exchange_app/services/auth_service.dart';
 
@@ -31,6 +32,26 @@ class _LoginScreenState extends State<LoginScreen> {
       });
       // Перенаправляем на главную страницу после успешного входа
       Navigator.pushReplacementNamed(context, '/main');
+    } on FirebaseAuthException catch (e) {
+      setState(() {
+        _isLoading = false;
+        _loginFailed = true;
+      });
+
+      String errorMessage;
+      if (e.code == 'missing-password') {
+        errorMessage = 'Введите пароль.';
+      } else if (e.code == 'invalid-email') {
+        errorMessage = 'Неверный формат email.';
+      } else if (e.code == 'invalid-credential') {
+        errorMessage = 'Указанные учетные данные неверны.';
+      } else {
+        errorMessage = 'Ошибка входа: ${e.message}';
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(errorMessage)),
+      );
     } catch (e) {
       setState(() {
         _isLoading = false;
@@ -86,14 +107,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _handleLogin,
                     child: const Text('Войти'),
                   ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                // Перенаправляем на страницу регистрации (позже добавим)
-                Navigator.pushNamed(context, '/signup');
-              },
-              child: const Text('Нет аккаунта? Зарегистрируйтесь'),
-            ),
           ],
         ),
       ),
