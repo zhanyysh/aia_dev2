@@ -6,6 +6,7 @@ import 'package:exchange_app/screens/cash_screen.dart';
 import 'package:exchange_app/screens/currency_screen.dart';
 import 'package:exchange_app/screens/events_screen.dart';
 import 'package:exchange_app/screens/login_screen.dart';
+import 'package:exchange_app/screens/users_screen.dart';
 import 'package:exchange_app/services/auth_service.dart';
 
 class MainScreen extends StatefulWidget {
@@ -150,35 +151,6 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ),
             ListTile(
-              leading: Icon(Icons.home),
-              title: Text('Главная'),
-              onTap: () {
-                Navigator.pop(context);
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.history),
-              title: Text('История'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const EventsScreen()),
-                );
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.account_balance_wallet),
-              title: Text('Касса'),
-              onTap: () {
-                Navigator.pop(context);
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(builder: (context) => const CashScreen()),
-                );
-              },
-            ),
-            ListTile(
               leading: Icon(Icons.currency_exchange),
               title: Text('Валюты'),
               onTap: () {
@@ -190,15 +162,89 @@ class _MainScreenState extends State<MainScreen> {
               },
             ),
             ListTile(
+              leading: Icon(Icons.people),
+              title: Text('Пользователи'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const UsersScreen()),
+                );
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.logout),
               title: Text('Выйти'),
+              onTap: () async {
+                final shouldSignOut = await showDialog<bool>(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: Text('Подтверждение'),
+                      content: Text('Вы уверены, что хотите выйти из аккаунта?'),
+                      actions: [
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(false),
+                          child: Text('Отмена'),
+                        ),
+                        TextButton(
+                          onPressed: () => Navigator.of(context).pop(true),
+                          child: Text('Выйти'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+
+                if (shouldSignOut == true) {
+                  _authService.signOut().then((_) {
+                    Navigator.pushReplacement(
+                      context,
+                      MaterialPageRoute(builder: (context) => const LoginScreen()),
+                    );
+                  });
+                }
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.brightness_6),
+              title: Text('Сменить тему'),
               onTap: () {
-                _authService.signOut().then((_) {
-                  Navigator.pushReplacement(
-                    context,
-                    MaterialPageRoute(builder: (context) => const LoginScreen()),
-                  );
-                });
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: Text('Сменить тему'),
+                      content: Text('Выберите тему:'),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              // Change to light theme
+                              Theme.of(context).brightness == Brightness.dark
+                                  ? Theme.of(context).copyWith(brightness: Brightness.light)
+                                  : Theme.of(context).copyWith(brightness: Brightness.dark);
+                            });
+                          },
+                          child: Text('Светлая'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              // Change to dark theme
+                              Theme.of(context).brightness == Brightness.light
+                                  ? Theme.of(context).copyWith(brightness: Brightness.dark)
+                                  : Theme.of(context).copyWith(brightness: Brightness.light);
+                            });
+                          },
+                          child: Text('Темная'),
+                        ),
+                      ],
+                    );
+                  },
+                );
               },
             ),
           ],
