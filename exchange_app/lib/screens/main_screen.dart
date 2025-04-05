@@ -1,4 +1,3 @@
-//main_screen.dart
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
@@ -18,8 +17,8 @@ class MainScreen extends StatefulWidget {
 
 class _MainScreenState extends State<MainScreen> {
   final TextEditingController _amountController = TextEditingController();
+  final TextEditingController _rateController = TextEditingController();
   String? _selectedCurrency;
-  double? _rate;
   double? _total;
   bool _isSelling = true; // true = Продажа (стрелка вверх), false = Покупка (стрелка вниз)
   final AuthService _authService = AuthService();
@@ -28,13 +27,15 @@ class _MainScreenState extends State<MainScreen> {
   void initState() {
     super.initState();
     _amountController.addListener(_calculateTotal);
+    _rateController.addListener(_calculateTotal);
   }
 
   void _calculateTotal() {
     final amount = double.tryParse(_amountController.text.trim());
-    if (amount != null && _rate != null) {
+    final rate = double.tryParse(_rateController.text.trim());
+    if (amount != null && rate != null && rate > 0) {
       setState(() {
-        _total = amount * _rate!;
+        _total = amount * rate;
       });
     } else {
       setState(() {
@@ -53,34 +54,15 @@ class _MainScreenState extends State<MainScreen> {
     }
 
     final amount = double.tryParse(_amountController.text.trim());
-    if (amount == null || _selectedCurrency == null || _rate == null) {
+    final rate = double.tryParse(_rateController.text.trim());
+    if (amount == null || amount <= 0 || _selectedCurrency == null || rate == null || rate <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Заполните все поля')),
+        const SnackBar(content: Text('Заполните все поля корректно (значения должны быть больше 0)')),
       );
       return;
     }
 
     try {
-      // Проверяем, существует ли документ для выбранной валюты в коллекции currencies
-      final currencyDocRef = FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .collection('currencies')
-          .doc(_selectedCurrency);
-
-      final currencyDoc = await currencyDocRef.get();
-      if (!currencyDoc.exists) {
-        // Если документа нет, создаем его с начальным значением курса
-        await currencyDocRef.set({
-          'rate': _rate,
-        });
-      } else {
-        // Если документ существует, обновляем курс
-        await currencyDocRef.update({
-          'rate': _rate,
-        });
-      }
-
       // Добавляем транзакцию в events с нужными полями
       await FirebaseFirestore.instance
           .collection('users')
@@ -91,17 +73,17 @@ class _MainScreenState extends State<MainScreen> {
         'date': Timestamp.now(),
         'type': _isSelling ? 'sell' : 'buy',
         'amount': amount,
-        'rate': _rate,
+        'rate': rate,
         'total': _total,
-        'month': '', // Поле month оставляем пустым, как в базе данных
+        'userId': user.uid, // Добавляем userId для совместимости с CashService
       });
 
       // Очищаем поля после успешной транзакции
       _amountController.clear();
+      _rateController.clear();
       setState(() {
         _total = null;
         _selectedCurrency = null;
-        _rate = null;
       });
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(content: Text('Транзакция добавлена')),
@@ -116,6 +98,7 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _amountController.dispose();
+    _rateController.dispose();
     super.dispose();
   }
 
@@ -321,9 +304,29 @@ class _MainScreenState extends State<MainScreen> {
                     .collection('currencies')
                     .snapshots(),
                 builder: (context, snapshot) {
-                  if (!snapshot.hasData) {
+                  if (snapshot.connectionState == ConnectionState.waiting) {
                     return const Center(child: CircularProgressIndicator());
                   }
+                  if (snapshot.hasError) {
+                    return Center(
+                      child: Column(
+                        children: [
+                          Text('Ошибка: ${snapshot.error.toString()}'),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () {
+                              setState(() {}); // Перезапускаем StreamBuilder
+                            },
+                            child: const Text('Повторить'),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+                  if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                    return const Center(child: Text('Нет доступных валют'));
+                  }
+
                   final currencies = snapshot.data!.docs;
                   final currencyNames = currencies.map((doc) => doc.id).toList();
 
@@ -365,8 +368,9 @@ class _MainScreenState extends State<MainScreen> {
                               .doc(value)
                               .get();
                           if (doc.exists) {
+                            final rate = (doc.data()!['rate'] as num?)?.toDouble();
                             setState(() {
-                              _rate = (doc.data()!['rate'] as num?)?.toDouble();
+                              _rateController.text = rate?.toString() ?? '';
                             });
                             _calculateTotal();
                           }
@@ -416,12 +420,7 @@ class _MainScreenState extends State<MainScreen> {
                   ],
                 ),
                 child: TextField(
-                  onChanged: (value) {
-                    setState(() {
-                      _rate = double.tryParse(value);
-                    });
-                    _calculateTotal();
-                  },
+                  controller: _rateController,
                   decoration: const InputDecoration(
                     labelText: 'Курс',
                     border: InputBorder.none,

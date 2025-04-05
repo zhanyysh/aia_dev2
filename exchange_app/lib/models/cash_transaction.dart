@@ -2,40 +2,51 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 
 class CashTransaction {
   final String id;
-  final String type; // 'buy' или 'sell'
-  final String currency;
+  final String type;
   final double amount;
   final double total;
+  final double rate;
+  final String currency;
   final DateTime transactionDate;
+  final String userId;
 
   CashTransaction({
     required this.id,
     required this.type,
-    required this.currency,
     required this.amount,
     required this.total,
+    required this.rate,
+    required this.currency,
     required this.transactionDate,
+    required this.userId,
   });
 
-  factory CashTransaction.fromFirestore(Map<String, dynamic> map) {
+  factory CashTransaction.fromFirestore(DocumentSnapshot doc) {
+    Map<String, dynamic> data = doc.data() as Map<String, dynamic>;
     return CashTransaction(
-      id: map['id'] as String? ?? '',
-      type: map['type'] as String? ?? '',
-      currency: map['currency'] as String? ?? '',
-      amount: (map['amount'] as num?)?.toDouble() ?? 0.0,
-      total: (map['total'] as num?)?.toDouble() ?? 0.0,
-      transactionDate: (map['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      id: doc.id,
+      type: data['type'] ?? '',
+      amount: (data['amount'] ?? 0).toDouble(),
+      total: (data['total'] ?? 0).toDouble(),
+      rate: (data['rate'] ?? 0).toDouble(),
+      currency: data['currency'] ?? '',
+      // Проверяем, есть ли transactionDate, и если нет, используем DateTime.now()
+      transactionDate: data['transactionDate'] != null
+          ? (data['transactionDate'] as Timestamp).toDate()
+          : DateTime.now(),
+      userId: data['userId'] ?? '',
     );
   }
 
   Map<String, dynamic> toFirestore() {
     return {
-      'id': id,
       'type': type,
-      'currency': currency,
       'amount': amount,
       'total': total,
-      'date': transactionDate, // Сохраняем как 'date', чтобы соответствовать структуре events
+      'rate': rate,
+      'currency': currency,
+      'transactionDate': Timestamp.fromDate(transactionDate),
+      'userId': userId,
     };
   }
 }

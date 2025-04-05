@@ -1,48 +1,78 @@
+// lib/services/cash_service.dart
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import '../models/cash_transaction.dart';
 
 class CashService {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseAuth _auth = FirebaseAuth.instance;
 
   Stream<List<CashTransaction>> getTransactions(DateTime startDate, DateTime endDate) {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _auth.currentUser;
     if (user == null) {
-      print('Пользователь не авторизован');
-      return const Stream.empty(); // Возвращаем пустой поток, если пользователь не авторизован
+      print('CashService: Пользователь не аутентифицирован');
+      throw Exception('User not authenticated');
     }
 
-    print('Запрос транзакций для пользователя ${user.uid} с $startDate по $endDate');
+    print('CashService: Запрос транзакций для пользователя ${user.uid}');
     return _firestore
         .collection('users')
         .doc(user.uid)
         .collection('events')
-        .where('date', isGreaterThanOrEqualTo: startDate)
-        .where('date', isLessThanOrEqualTo: endDate)
+        .where('date', isGreaterThanOrEqualTo: Timestamp.fromDate(startDate))
+        .where('date', isLessThanOrEqualTo: Timestamp.fromDate(endDate))
+        .orderBy('date', descending: true)
         .snapshots()
         .map((snapshot) {
-          print('Получено документов: ${snapshot.docs.length}');
-          return snapshot.docs.map((doc) {
-            print('Документ: ${doc.data()}');
-            // Добавляем ID документа в данные
-            final data = doc.data();
-            data['id'] = doc.id; // Добавляем ID документа в данные
-            return CashTransaction.fromFirestore(data);
-          }).toList();
-        });
+      print('CashService: Получено ${snapshot.docs.length} документов');
+      return snapshot.docs.map((doc) {
+        return CashTransaction.fromFirestore(doc);
+      }).toList();
+    });
   }
 
-  Future<void> addTransaction(CashTransaction transaction) async {
-    final user = FirebaseAuth.instance.currentUser;
+  // Метод для сохранения итоговой статистики в kassa (оставляем без изменений)
+  Future<void> saveSummaryStats({
+    required DateTime startDate,
+    required DateTime endDate,
+    required double totalTurnover,
+    required double totalProfit,
+    required Map<String, double> buyAmounts,
+    required Map<String, double> sellAmounts,
+    required Map<String, int> buyCounts,
+    required Map<String, int> sellCounts,
+  }) async {
+    final user = _auth.currentUser;
     if (user == null) {
       throw Exception('Пользователь не авторизован');
     }
 
-    await _firestore
-        .collection('users')
-        .doc(user.uid)
-        .collection('events')
-        .doc(transaction.id)
-        .set(transaction.toFirestore());
+    await _firestore.collection('kassa').add({
+      'userId': user.uid,
+      'startDate': Timestamp.fromDate(startDate),
+      'endDate': Timestamp.fromDate(endDate),
+      'totalTurnover': totalTurnover,
+      'totalProfit': totalProfit,
+      'buyAmounts': buyAmounts,
+      'sellAmounts': sellAmounts,
+      'buyCounts': buyCounts,
+      'sellCounts': sellCounts,
+      'createdAt': Timestamp.now(),
+    });
+  }
+
+  // Метод для чтения итоговой статистики из kassa (оставляем без изменений)
+  Stream<List<Map<String, dynamic>>> getSummaryStats() {
+    final user = _auth.currentUser;
+    if (user == null) {
+      return Stream.value([]);
+    }
+
+    return _firestore
+        .collection('kassa')
+        .where('userId', isEqualTo: user.uid)
+        .orderBy('createdAt', descending: true)
+        .snapshots()
+        .map((snapshot) => snapshot.docs.map((doc) => doc.data()).toList());
   }
 }
