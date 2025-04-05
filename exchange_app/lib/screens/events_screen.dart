@@ -1,7 +1,17 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:intl/intl.dart'; // Для форматирования даты
+import 'package:intl/intl.dart';
+import 'package:pdf/pdf.dart';
+import 'package:pdf/widgets.dart' as pw;
+import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:universal_html/html.dart' as html;
+
+// Mobile-only imports - wrapped in try-catch to avoid web errors
+import 'package:path_provider/path_provider.dart';
+import 'package:open_file/open_file.dart';
+import 'package:permission_handler/permission_handler.dart';
+import 'dart:io' show Platform, File, Directory;
 
 class EventsScreen extends StatefulWidget {
   const EventsScreen({super.key});
@@ -121,6 +131,186 @@ class _EventsScreenState extends State<EventsScreen> {
         _selectedProfitDate = picked;
         _profitDateController.text = DateFormat('dd.MM.yyyy').format(picked);
       });
+    }
+  }
+
+  // Метод для экспорта данных в PDF
+  Future<void> _exportToPdf(List<QueryDocumentSnapshot> events) async {
+    try {
+      // Show a loading indicator
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Создание PDF файла...')),
+      );
+      
+      print('Starting PDF creation...');
+      final pdf = pw.Document();
+      
+      pdf.addPage(
+        pw.Page(
+          pageFormat: PdfPageFormat.a4,
+          build: (pw.Context context) {
+            return pw.Column(
+              crossAxisAlignment: pw.CrossAxisAlignment.start,
+              children: [
+                pw.Text('События за период: $_selectedPeriod', 
+                  style: pw.TextStyle(fontSize: 20, fontWeight: pw.FontWeight.bold)),
+                pw.SizedBox(height: 20),
+                pw.Table(
+                  border: pw.TableBorder.all(),
+                  columnWidths: {
+                    0: const pw.FlexColumnWidth(1),
+                    1: const pw.FlexColumnWidth(1),
+                    2: const pw.FlexColumnWidth(1),
+                    3: const pw.FlexColumnWidth(1),
+                    4: const pw.FlexColumnWidth(1.5),
+                  },
+                  children: [
+                    // Header row
+                    pw.TableRow(
+                      children: [
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('Тип', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('Валюта', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('Кол-во', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('Курс', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                        pw.Padding(
+                          padding: const pw.EdgeInsets.all(5),
+                          child: pw.Text('Дата', style: pw.TextStyle(fontWeight: pw.FontWeight.bold)),
+                        ),
+                      ],
+                    ),
+                    // Data rows
+                    ...events.map((eventDoc) {
+                      final event = eventDoc.data() as Map<String, dynamic>;
+                      final type = event['type'] ?? 'custom';
+                      final currency = event['currency'] ?? '';
+                      final amount = event['amount']?.toString() ?? '0';
+                      final rate = event['rate']?.toString() ?? '0';
+                      final date = (event['date'] as Timestamp?)?.toDate();
+                      final formattedDate = date != null
+                          ? DateFormat('dd.MM.yyyy').format(date)
+                          : '';
+                      
+                      return pw.TableRow(
+                        children: [
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(5),
+                            child: pw.Text(type == 'sell'
+                                ? 'Продажа'
+                                : type == 'buy'
+                                    ? 'Покупка'
+                                    : 'Кастом'),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(5),
+                            child: pw.Text(currency),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(5),
+                            child: pw.Text(amount),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(5),
+                            child: pw.Text(rate),
+                          ),
+                          pw.Padding(
+                            padding: const pw.EdgeInsets.all(5),
+                            child: pw.Text(formattedDate),
+                          ),
+                        ],
+                      );
+                    }).toList(),
+                  ],
+                ),
+              ],
+            );
+          },
+        ),
+      );
+      
+      final fileName = 'события_${DateFormat('dd_MM_yyyy_HH_mm').format(DateTime.now())}.pdf';
+      final bytes = await pdf.save();
+
+      if (kIsWeb) {
+        // Web handling - download file using browser API
+        print('Web export: Creating download link');
+        final blob = html.Blob([bytes], 'application/pdf');
+        final url = html.Url.createObjectUrlFromBlob(blob);
+        
+        final anchor = html.AnchorElement(href: url)
+          ..setAttribute('download', fileName)
+          ..style.display = 'none';
+        
+        html.document.body!.children.add(anchor);
+        anchor.click();
+        
+        html.document.body!.children.remove(anchor);
+        html.Url.revokeObjectUrl(url);
+        
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('PDF файл скачан в папку загрузок')),
+        );
+      } 
+      else {
+        // Mobile handling
+        try {
+          print('Mobile export: Saving to file');
+          Directory? directory;
+          String filePath = '';
+          
+          // Android specific handling
+          if (Platform.isAndroid) {
+            await Permission.storage.request();
+            final status = await Permission.storage.status;
+            if (status.isGranted) {
+              directory = await getExternalStorageDirectory();
+              if (directory != null) {
+                filePath = '${directory.path}/$fileName';
+              }
+            }
+          }
+          
+          // iOS specific handling or fallback
+          if (filePath.isEmpty) {
+            directory = await getApplicationDocumentsDirectory();
+            filePath = '${directory.path}/$fileName';
+          }
+          
+          print('Saving PDF to: $filePath');
+          final file = File(filePath);
+          await file.writeAsBytes(bytes);
+          
+          // Open the file (on mobile)
+          final result = await OpenFile.open(filePath);
+          print('Open file result: ${result.type}, ${result.message}');
+          
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('PDF файл сохранен в $filePath')),
+          );
+        } catch (e) {
+          print('Error in mobile file handling: $e');
+          ScaffoldMessenger.of(context).showSnackBar(
+            SnackBar(content: Text('Ошибка при сохранении файла: $e')),
+          );
+        }
+      }
+    } catch (e, stackTrace) {
+      print('Error in PDF export: $e');
+      print('Stack trace: $stackTrace');
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при создании PDF: $e')),
+      );
     }
   }
 
@@ -266,44 +456,69 @@ class _EventsScreenState extends State<EventsScreen> {
                   }
 
                   final events = snapshot.data!.docs;
-
-                  return SingleChildScrollView(
-                    scrollDirection: Axis.vertical, // Вертикальная прокрутка для таблицы транзакций
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: DataTable(
-                        columns: const [
-                          DataColumn(label: Text('Тип')),
-                          DataColumn(label: Text('Валюта')),
-                          DataColumn(label: Text('Кол-во')),
-                          DataColumn(label: Text('Курс')),
-                          DataColumn(label: Text('Дата')),
-                        ],
-                        rows: events.map((eventDoc) {
-                          final event = eventDoc.data() as Map<String, dynamic>;
-                          final type = event['type'] ?? 'custom';
-                          final currency = event['currency'] ?? '';
-                          final amount = event['amount']?.toString() ?? '0';
-                          final rate = event['rate']?.toString() ?? '0';
-                          final date = (event['date'] as Timestamp?)?.toDate();
-                          final formattedDate = date != null
-                              ? DateFormat('dd.MM.yyyy').format(date)
-                              : '';
-
-                          return DataRow(cells: [
-                            DataCell(Text(type == 'sell'
-                                ? 'Продажа'
-                                : type == 'buy'
-                                    ? 'Покупка'
-                                    : 'Кастом')),
-                            DataCell(Text(currency)),
-                            DataCell(Text(amount)),
-                            DataCell(Text(rate)),
-                            DataCell(Text(formattedDate)),
-                          ]);
-                        }).toList(),
+                  return Column(
+                    children: [
+                      // Export button
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+                        child: Align(
+                          alignment: Alignment.centerRight,
+                          child: ElevatedButton.icon(
+                            icon: const Icon(Icons.picture_as_pdf),
+                            label: const Text('Экспорт в PDF'),
+                            onPressed: () {
+                              print("Export button pressed");
+                              _exportToPdf(events);
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.green,
+                              foregroundColor: Colors.white,
+                            ),
+                          ),
+                        ),
                       ),
-                    ),
+                      // Transaction table
+                      Expanded(
+                        child: SingleChildScrollView(
+                          scrollDirection: Axis.vertical,
+                          child: SingleChildScrollView(
+                            scrollDirection: Axis.horizontal,
+                            child: DataTable(
+                              columns: const [
+                                DataColumn(label: Text('Тип')),
+                                DataColumn(label: Text('Валюта')),
+                                DataColumn(label: Text('Кол-во')),
+                                DataColumn(label: Text('Курс')),
+                                DataColumn(label: Text('Дата')),
+                              ],
+                              rows: events.map((eventDoc) {
+                                final event = eventDoc.data() as Map<String, dynamic>;
+                                final type = event['type'] ?? 'custom';
+                                final currency = event['currency'] ?? '';
+                                final amount = event['amount']?.toString() ?? '0';
+                                final rate = event['rate']?.toString() ?? '0';
+                                final date = (event['date'] as Timestamp?)?.toDate();
+                                final formattedDate = date != null
+                                    ? DateFormat('dd.MM.yyyy').format(date)
+                                    : '';
+
+                                return DataRow(cells: [
+                                  DataCell(Text(type == 'sell'
+                                      ? 'Продажа'
+                                      : type == 'buy'
+                                          ? 'Покупка'
+                                          : 'Кастом')),
+                                  DataCell(Text(currency)),
+                                  DataCell(Text(amount)),
+                                  DataCell(Text(rate)),
+                                  DataCell(Text(formattedDate)),
+                                ]);
+                              }).toList(),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
                   );
                 },
               ),
@@ -414,7 +629,6 @@ class _EventsScreenState extends State<EventsScreen> {
                   // Средняя покупка = (Общее кол-во покупок * средний курс покупки) / Общее кол-во транзакций покупок
                   final totalBuyAmount = stats['totalBuyAmount'];
                   final avgBuy = buyCount > 0 ? (totalBuyAmount * avgBuyRate) / buyCount : 0.0;
-
                   // Средняя продажа = (Общее кол-во продаж * средний курс продажи) / Общее кол-во транзакций продаж
                   final totalSellAmount = stats['totalSellAmount'];
                   final avgSell = sellCount > 0 ? (totalSellAmount * avgSellRate) / sellCount : 0.0;

@@ -16,8 +16,16 @@ dependencies:
   cloud_firestore: ^5.4.1
   intl: ^0.19.0
   fl_chart: ^0.70.2  # Добавляем зависимость для круговой диаграммы
+  shared_preferences: ^2.2.0
+  
+  # PDF export dependencies
+  pdf: ^3.10.7
+  path_provider: ^2.1.1
+  open_file: ^3.3.2
+  permission_handler: ^11.0.0  # Add this for storage permissions
   
   cupertino_icons: ^1.0.8
+  universal_html: ^2.0.4  # Add this for better web support
 
 dev_dependencies:
   flutter_test:
