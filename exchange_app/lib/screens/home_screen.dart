@@ -17,28 +17,16 @@ class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
   final AuthService _authService = AuthService();
 
-  // Список экранов
+  // Список экранов - обновлен до двух основных
   final List<Widget> _screens = [
     const MainScreen(),
     const EventsScreen(),
-    const CashScreen(),
-    const CurrencyScreen(),
   ];
 
   void _onItemTapped(int index) {
-    if (index == 4) {
-      // Если нажата кнопка "Выход"
-      _authService.signOut().then((_) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const LoginScreen()),
-        );
-      });
-    } else {
-      setState(() {
-        _selectedIndex = index;
-      });
-    }
+    setState(() {
+      _selectedIndex = index;
+    });
   }
 
   @override
@@ -58,24 +46,12 @@ class _HomeScreenState extends State<HomeScreen> {
             icon: Icon(Icons.event),
             label: 'События',
           ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Касса',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.settings),
-            label: 'Настройки',
-          ),
-          BottomNavigationBarItem(
-            icon: Icon(Icons.logout),
-            label: 'Выйти',
-          ),
         ],
         currentIndex: _selectedIndex,
         selectedItemColor: Colors.blueAccent,
         unselectedItemColor: Colors.black,
-        showSelectedLabels: true, // Показывать подписи для выбранного элемента
-        showUnselectedLabels: true, // Показывать подписи для невыбранных элементов
+        showSelectedLabels: true,
+        showUnselectedLabels: true,
         backgroundColor: Colors.grey[200],
         onTap: _onItemTapped,
       ),
