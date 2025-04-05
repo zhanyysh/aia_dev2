@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:intl/intl.dart';
@@ -59,8 +60,16 @@ class CashScreen extends StatefulWidget {
 class _CashScreenState extends State<CashScreen> {
   final CashService _cashService = CashService();
   final AuthService _authService = AuthService();
-  String _selectedPeriod = 'Сегодня'; // По умолчанию сегодня
-  final List<String> _periodOptions = ['Сегодня', '3 дня', 'Неделя', 'Месяц', 'Кастомный период', 'За все время', 'Ручной выбор'];
+  String _selectedPeriod = '3 дня';
+  final List<String> _periodOptions = [
+    'Сегодня',
+    '3 дня',
+    'Неделя',
+    'Месяц',
+    'Кастомный период',
+    'За все время',
+    'Ручной выбор'
+  ];
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime _endDate = DateTime.now();
   final TextEditingController _startDateController = TextEditingController();
@@ -77,7 +86,7 @@ class _CashScreenState extends State<CashScreen> {
 
   Future<void> _checkAuthenticationStatus() async {
     User? user = _authService.getCurrentUser();
-    print('Текущий пользователь: ${user?.uid}'); // Отладочный вывод
+    print('Текущий пользователь: ${user?.uid}');
     setState(() {
       _isAuthenticated = user != null;
     });
@@ -96,11 +105,14 @@ class _CashScreenState extends State<CashScreen> {
           const SnackBar(content: Text('Конечная дата не может быть раньше начальной')),
         );
         return {
-          'start': now,
-          'end': now,
+          'start': Timestamp.fromDate(now),
+          'end': Timestamp.fromDate(now),
         };
       }
-    } else if (_selectedPeriod == 'Кастомный период' && _startDateController.text.isNotEmpty && _endDateController.text.isNotEmpty) {
+      endDate = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
+    } else if (_selectedPeriod == 'Кастомный период' &&
+        _startDateController.text.isNotEmpty &&
+        _endDateController.text.isNotEmpty) {
       startDate = DateFormat('dd.MM.yyyy').parse(_startDateController.text);
       endDate = DateFormat('dd.MM.yyyy').parse(_endDateController.text);
       if (endDate.isBefore(startDate)) {
@@ -108,11 +120,11 @@ class _CashScreenState extends State<CashScreen> {
           const SnackBar(content: Text('Конечная дата не может быть раньше начальной')),
         );
         return {
-          'start': now,
-          'end': now,
+          'start': Timestamp.fromDate(now),
+          'end': Timestamp.fromDate(now),
         };
       }
-      endDate = endDate.add(const Duration(days: 1));
+      endDate = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
     } else if (_selectedPeriod == 'За все время') {
       startDate = DateTime(2000);
       endDate = now;
@@ -120,32 +132,31 @@ class _CashScreenState extends State<CashScreen> {
       switch (_selectedPeriod) {
         case 'Сегодня':
           startDate = DateTime(now.year, now.month, now.day);
-          endDate = now;
+          endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
           break;
         case '3 дня':
           startDate = now.subtract(const Duration(days: 3));
-          endDate = now;
+          endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
           break;
         case 'Неделя':
           startDate = now.subtract(const Duration(days: 7));
-          endDate = now;
+          endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
           break;
         case 'Месяц':
-          final previousMonth = DateTime(now.year, now.month - 1, 1);
-          startDate = previousMonth;
-          endDate = DateTime(now.year, now.month, 0);
+          startDate = now.subtract(const Duration(days: 30));
+          endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
           break;
         default:
           startDate = now.subtract(const Duration(days: 30));
-          endDate = now;
+          endDate = DateTime(now.year, now.month, now.day, 23, 59, 59);
           break;
       }
     }
 
     print('Выбранный период: $_selectedPeriod, Диапазон: $startDate - $endDate');
     return {
-      'start': startDate,
-      'end': endDate,
+      'start': Timestamp.fromDate(startDate),
+      'end': Timestamp.fromDate(endDate),
     };
   }
 
@@ -178,29 +189,42 @@ class _CashScreenState extends State<CashScreen> {
     Map<String, double> sellAmounts = {};
     Map<String, int> buyCounts = {};
     Map<String, int> sellCounts = {};
-    double totalTurnover = 0;
-    double totalProfit = 0;
+    Map<String, double> buyRates = {}; // Для подсчета суммы курсов покупок
+    Map<String, double> sellRates = {}; // Для подсчета суммы курсов продаж
+    Map<String, double> buyTotals = {}; // Для подсчета итоговых сумм (в рублях)
+    Map<String, double> sellTotals = {}; // Для подсчета итоговых сумм (в рублях)
 
     for (var tx in transactions) {
-      totalTurnover += tx.total;
+      if (tx.type == 'custom' && (tx.amount == 0 || tx.total == 0)) {
+        continue;
+      }
       if (tx.type == 'buy') {
-        buyAmounts[tx.currency] = (buyAmounts[tx.currency] ?? 0) + tx.amount;
+        buyAmounts[tx.currency] = (buyAmounts[tx.currency] ?? 0) + tx.amount; // Сумма валюты
+        buyTotals[tx.currency] = (buyTotals[tx.currency] ?? 0) + tx.total; // Итоговая сумма в рублях
+        buyRates[tx.currency] = (buyRates[tx.currency] ?? 0) + tx.rate; // Сумма курсов
         buyCounts[tx.currency] = (buyCounts[tx.currency] ?? 0) + 1;
       } else if (tx.type == 'sell') {
-        sellAmounts[tx.currency] = (sellAmounts[tx.currency] ?? 0) + tx.amount;
+        sellAmounts[tx.currency] = (sellAmounts[tx.currency] ?? 0) + tx.amount; // Сумма валюты
+        sellTotals[tx.currency] = (sellTotals[tx.currency] ?? 0) + tx.total; // Итоговая сумма в рублях
+        sellRates[tx.currency] = (sellRates[tx.currency] ?? 0) + tx.rate; // Сумма курсов
         sellCounts[tx.currency] = (sellCounts[tx.currency] ?? 0) + 1;
-        totalProfit += tx.total;
       }
     }
 
-    double totalBuyAmount = buyAmounts.values.fold(0, (sum, amount) => sum + amount);
-    double totalSellAmount = sellAmounts.values.fold(0, (sum, amount) => sum + amount);
+    double totalBuyAmount = buyTotals.values.fold(0, (sum, amount) => sum + amount);
+    double totalSellAmount = sellTotals.values.fold(0, (sum, amount) => sum + amount);
+    double totalTurnover = totalBuyAmount + totalSellAmount;
+    double totalProfit = totalSellAmount - totalBuyAmount;
 
     return {
       'buyAmounts': buyAmounts,
       'sellAmounts': sellAmounts,
       'buyCounts': buyCounts,
       'sellCounts': sellCounts,
+      'buyRates': buyRates, // Добавляем суммы курсов
+      'sellRates': sellRates, // Добавляем суммы курсов
+      'buyTotals': buyTotals, // Для прибыли
+      'sellTotals': sellTotals, // Для прибыли
       'totalTurnover': totalTurnover,
       'totalProfit': totalProfit,
       'totalBuyAmount': totalBuyAmount,
@@ -215,7 +239,6 @@ class _CashScreenState extends State<CashScreen> {
     Map<String, Map<DateTime, int>> dailySellCounts = {};
     Map<String, Map<DateTime, double>> dailyProfits = {};
 
-    // Инициализация данных для каждого дня
     for (var currency in transactions.map((tx) => tx.currency).toSet()) {
       dailyBuyAmounts[currency] = {};
       dailySellAmounts[currency] = {};
@@ -234,16 +257,18 @@ class _CashScreenState extends State<CashScreen> {
       }
     }
 
-    // Заполнение данных
     for (var tx in transactions) {
+      if (tx.type == 'custom' && (tx.amount == 0 || tx.total == 0)) {
+        continue;
+      }
       DateTime txDate = DateTime(tx.transactionDate.year, tx.transactionDate.month, tx.transactionDate.day);
       if (tx.type == 'buy') {
-        dailyBuyAmounts[tx.currency]![txDate] = (dailyBuyAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailyBuyAmounts[tx.currency]![txDate] = (dailyBuyAmounts[tx.currency]![txDate] ?? 0) + tx.amount; // Используем amount
         dailyBuyCounts[tx.currency]![txDate] = (dailyBuyCounts[tx.currency]![txDate] ?? 0) + 1;
       } else if (tx.type == 'sell') {
-        dailySellAmounts[tx.currency]![txDate] = (dailySellAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailySellAmounts[tx.currency]![txDate] = (dailySellAmounts[tx.currency]![txDate] ?? 0) + tx.amount; // Используем amount
         dailySellCounts[tx.currency]![txDate] = (dailySellCounts[tx.currency]![txDate] ?? 0) + 1;
-        dailyProfits[tx.currency]![txDate] = (dailyProfits[tx.currency]![txDate] ?? 0) + tx.total;
+        dailyProfits[tx.currency]![txDate] = (dailyProfits[tx.currency]![txDate] ?? 0) + (tx.total - (dailyBuyAmounts[tx.currency]![txDate] ?? 0));
       }
     }
 
@@ -254,6 +279,23 @@ class _CashScreenState extends State<CashScreen> {
       'dailySellCounts': dailySellCounts,
       'dailyProfits': dailyProfits,
     };
+  }
+
+  Future<void> _clearEvents() async {
+    final user = FirebaseAuth.instance.currentUser;
+    if (user == null) return;
+
+    final eventsRef = FirebaseFirestore.instance
+        .collection('users')
+        .doc(user.uid)
+        .collection('events');
+    final snapshot = await eventsRef.get();
+    for (var doc in snapshot.docs) {
+      await doc.reference.delete();
+    }
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Все транзакции удалены')),
+    );
   }
 
   @override
@@ -269,6 +311,18 @@ class _CashScreenState extends State<CashScreen> {
       appBar: AppBar(
         title: const Text('Отчёт по кассе'),
         backgroundColor: Colors.blueAccent,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.delete),
+            onPressed: _isAuthenticated ? _clearEvents : null,
+            tooltip: 'Очистить транзакции',
+          ),
+          IconButton(
+            icon: const Icon(Icons.save),
+            onPressed: _isAuthenticated ? () => _saveSummaryStats(context) : null,
+            tooltip: 'Сохранить отчёт',
+          ),
+        ],
       ),
       body: _isAuthenticated
           ? Column(
@@ -371,24 +425,50 @@ class _CashScreenState extends State<CashScreen> {
                     child: StreamBuilder<List<CashTransaction>>(
                       stream: () {
                         final dateRange = _getDateRange();
-                        print('Диапазон дат: ${dateRange['start']} - ${dateRange['end']}');
-                        return _cashService.getTransactions(dateRange['start'], dateRange['end']);
+                        print('Диапазон дат: ${dateRange['start'].toDate()} - ${dateRange['end'].toDate()}');
+                        return _cashService.getTransactions(
+                          dateRange['start'].toDate(),
+                          dateRange['end'].toDate(),
+                        );
                       }(),
                       builder: (context, snapshot) {
                         if (snapshot.connectionState == ConnectionState.waiting) {
+                          print('StreamBuilder: Ожидание данных...');
                           return const Center(child: CircularProgressIndicator());
                         }
                         if (snapshot.hasError) {
-                          return Center(child: Text('Ошибка: ${snapshot.error}'));
+                          print('StreamBuilder: Ошибка: ${snapshot.error}');
+                          return Center(
+                            child: Column(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                Text('Ошибка: ${snapshot.error.toString()}'),
+                                const SizedBox(height: 16),
+                                ElevatedButton(
+                                  onPressed: () {
+                                    setState(() {}); // Перезапускаем StreamBuilder
+                                  },
+                                  child: const Text('Повторить'),
+                                ),
+                              ],
+                            ),
+                          );
                         }
                         if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                          print('StreamBuilder: Нет данных. Данные: ${snapshot.data}');
                           return const Center(child: Text('Нет данных за этот период'));
                         }
 
                         final transactions = snapshot.data!;
+                        print('StreamBuilder: Получено ${transactions.length} транзакций');
+                        transactions.forEach((tx) {
+                          print(
+                              'Транзакция: ${tx.id}, type: ${tx.type}, amount: ${tx.amount}, total: ${tx.total}, rate: ${tx.rate}, currency: ${tx.currency}, date: ${tx.transactionDate}, userId: ${tx.userId}');
+                        });
+
                         final dateRange = _getDateRange();
-                        final startDate = dateRange['start'] as DateTime;
-                        final endDate = dateRange['end'] as DateTime;
+                        final startDate = dateRange['start'].toDate();
+                        final endDate = dateRange['end'].toDate();
                         final stats = _calculateStats(transactions);
                         final dailyStats = _calculateDailyStats(transactions, startDate, endDate);
 
@@ -396,6 +476,10 @@ class _CashScreenState extends State<CashScreen> {
                         final sellAmounts = stats['sellAmounts'] as Map<String, double>;
                         final buyCounts = stats['buyCounts'] as Map<String, int>;
                         final sellCounts = stats['sellCounts'] as Map<String, int>;
+                        final buyRates = stats['buyRates'] as Map<String, double>;
+                        final sellRates = stats['sellRates'] as Map<String, double>;
+                        final buyTotals = stats['buyTotals'] as Map<String, double>;
+                        final sellTotals = stats['sellTotals'] as Map<String, double>;
                         final totalTurnover = stats['totalTurnover'] as double;
                         final totalProfit = stats['totalProfit'] as double;
                         final totalBuyAmount = stats['totalBuyAmount'] as double;
@@ -410,12 +494,12 @@ class _CashScreenState extends State<CashScreen> {
                         List<String> currencies = buyAmounts.keys.followedBy(sellAmounts.keys).toSet().toList();
                         List<DataRow> rows = currencies.map((currency) {
                           double buyAvg = (buyCounts[currency] ?? 0) > 0
-                              ? (buyAmounts[currency] ?? 0) / buyCounts[currency]!
+                              ? (buyRates[currency] ?? 0) / buyCounts[currency]! // Средний курс
                               : 0;
                           double sellAvg = (sellCounts[currency] ?? 0) > 0
-                              ? (sellAmounts[currency] ?? 0) / sellCounts[currency]!
+                              ? (sellRates[currency] ?? 0) / sellCounts[currency]! // Средний курс
                               : 0;
-                          double profit = (sellAmounts[currency] ?? 0) - (buyAmounts[currency] ?? 0);
+                          double profit = (sellTotals[currency] ?? 0) - (buyTotals[currency] ?? 0);
 
                           return DataRow(cells: [
                             DataCell(Text(currency)),
@@ -435,21 +519,18 @@ class _CashScreenState extends State<CashScreen> {
                         List<PieChartSectionData> sellAmountSections = [];
                         List<PieChartSectionData> profitSections = [];
 
-                        // Для легенды
                         List<Widget> buyCountIndicators = [];
                         List<Widget> sellCountIndicators = [];
                         List<Widget> buyAmountIndicators = [];
                         List<Widget> sellAmountIndicators = [];
                         List<Widget> profitIndicators = [];
 
-                        // Для гистограмм
                         List<Widget> buyCountBarCharts = [];
                         List<Widget> sellCountBarCharts = [];
                         List<Widget> buyAmountBarCharts = [];
                         List<Widget> sellAmountBarCharts = [];
                         List<Widget> profitBarCharts = [];
 
-                        // Цвета для валют
                         Map<String, Color> currencyColors = {};
                         currencies.asMap().forEach((index, currency) {
                           currencyColors[currency] = Colors.primaries[index % Colors.primaries.length];
@@ -503,7 +584,6 @@ class _CashScreenState extends State<CashScreen> {
                             );
                           }).toList();
 
-                          // Гистограмма для покупок (все валюты вместе)
                           List<BarChartGroupData> buyCountBarGroups = [];
                           DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
                           int dayIndex = 0;
@@ -524,7 +604,8 @@ class _CashScreenState extends State<CashScreen> {
                               BarChartGroupData(
                                 x: dayIndex,
                                 barRods: rods,
-                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                showingTooltipIndicators:
+                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -535,7 +616,8 @@ class _CashScreenState extends State<CashScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Покупки - Количество операций', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Покупки - Количество операций',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 16,
@@ -553,7 +635,7 @@ class _CashScreenState extends State<CashScreen> {
                                   child: SingleChildScrollView(
                                     scrollDirection: Axis.horizontal,
                                     child: SizedBox(
-                                      width: buyCountBarGroups.length * 40.0 * currencies.length, // Учитываем количество валют
+                                      width: buyCountBarGroups.length * 40.0 * currencies.length,
                                       child: BarChart(
                                         BarChartData(
                                           barGroups: buyCountBarGroups,
@@ -610,7 +692,6 @@ class _CashScreenState extends State<CashScreen> {
                             ),
                           );
 
-                          // Гистограмма для продаж (все валюты вместе)
                           List<BarChartGroupData> sellCountBarGroups = [];
                           currentDate = DateTime(startDate.year, startDate.month, startDate.day);
                           dayIndex = 0;
@@ -631,7 +712,8 @@ class _CashScreenState extends State<CashScreen> {
                               BarChartGroupData(
                                 x: dayIndex,
                                 barRods: rods,
-                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                showingTooltipIndicators:
+                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -642,7 +724,8 @@ class _CashScreenState extends State<CashScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Продажи - Количество операций', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Продажи - Количество операций',
+                                    style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 16,
@@ -728,7 +811,7 @@ class _CashScreenState extends State<CashScreen> {
                             buyAmountIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${value.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${value.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
@@ -750,7 +833,7 @@ class _CashScreenState extends State<CashScreen> {
                             sellAmountIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${value.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${value.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
@@ -763,7 +846,6 @@ class _CashScreenState extends State<CashScreen> {
                             );
                           }).toList();
 
-                          // Гистограмма для покупок (все валюты вместе)
                           List<BarChartGroupData> buyAmountBarGroups = [];
                           DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
                           int dayIndex = 0;
@@ -784,7 +866,8 @@ class _CashScreenState extends State<CashScreen> {
                               BarChartGroupData(
                                 x: dayIndex,
                                 barRods: rods,
-                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                showingTooltipIndicators:
+                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -870,7 +953,6 @@ class _CashScreenState extends State<CashScreen> {
                             ),
                           );
 
-                          // Гистограмма для продаж (все валюты вместе)
                           List<BarChartGroupData> sellAmountBarGroups = [];
                           currentDate = DateTime(startDate.year, startDate.month, startDate.day);
                           dayIndex = 0;
@@ -891,7 +973,8 @@ class _CashScreenState extends State<CashScreen> {
                               BarChartGroupData(
                                 x: dayIndex,
                                 barRods: rods,
-                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                showingTooltipIndicators:
+                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -979,17 +1062,18 @@ class _CashScreenState extends State<CashScreen> {
                         }
 
                         if (_chartType == 'Прибыль') {
-                          double totalProfitForPercentage = currencies.fold(0, (sum, curr) => sum + ((sellAmounts[curr] ?? 0) - (buyAmounts[curr] ?? 0)));
+                          double totalProfitForPercentage =
+                              currencies.fold(0, (sum, curr) => sum + ((sellTotals[curr] ?? 0) - (buyTotals[curr] ?? 0)));
                           profitSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double profit = (sellAmounts[currency] ?? 0) - (buyAmounts[currency] ?? 0);
+                            double profit = (sellTotals[currency] ?? 0) - (buyTotals[currency] ?? 0);
                             double percentage = totalProfitForPercentage > 0 ? (profit / totalProfitForPercentage * 100) : 0;
                             Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
                             profitIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${profit.toStringAsFixed(2)} KGS (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${profit.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
@@ -1002,7 +1086,6 @@ class _CashScreenState extends State<CashScreen> {
                             );
                           }).toList();
 
-                          // Гистограмма для прибыли (все валюты вместе)
                           List<BarChartGroupData> profitBarGroups = [];
                           DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
                           int dayIndex = 0;
@@ -1023,7 +1106,8 @@ class _CashScreenState extends State<CashScreen> {
                               BarChartGroupData(
                                 x: dayIndex,
                                 barRods: rods,
-                                showingTooltipIndicators: rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                showingTooltipIndicators:
+                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -1392,6 +1476,52 @@ class _CashScreenState extends State<CashScreen> {
                             const Text('Итоги:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                             Text('Общий оборот: ${totalTurnover.toStringAsFixed(2)}'),
                             Text('Общая прибыль: ${totalProfit.toStringAsFixed(2)}'),
+                            const SizedBox(height: 20),
+                            const Text('Сохраненные отчеты:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                            StreamBuilder<List<Map<String, dynamic>>>(
+                              stream: _cashService.getSummaryStats(),
+                              builder: (context, snapshot) {
+                                if (snapshot.connectionState == ConnectionState.waiting) {
+                                  return const Center(child: CircularProgressIndicator());
+                                }
+                                if (snapshot.hasError) {
+                                  return Center(child: Text('Ошибка: ${snapshot.error.toString()}'));
+                                }
+                                if (!snapshot.hasData || snapshot.data!.isEmpty) {
+                                  return const Center(child: Text('Нет сохраненных отчетов'));
+                                }
+
+                                final summaries = snapshot.data!;
+                                return ListView.builder(
+                                  shrinkWrap: true,
+                                  physics: const NeverScrollableScrollPhysics(),
+                                  itemCount: summaries.length,
+                                  itemBuilder: (context, index) {
+                                    final summary = summaries[index];
+                                    final startDate = (summary['startDate'] as Timestamp).toDate();
+                                    final endDate = (summary['endDate'] as Timestamp).toDate();
+                                    final totalTurnover = summary['totalTurnover'] as double;
+                                    final totalProfit = summary['totalProfit'] as double;
+
+                                    return Card(
+                                      margin: const EdgeInsets.symmetric(vertical: 8.0),
+                                      child: ListTile(
+                                        title: Text(
+                                          'Период: ${DateFormat('dd.MM.yyyy').format(startDate)} - ${DateFormat('dd.MM.yyyy').format(endDate)}',
+                                        ),
+                                        subtitle: Column(
+                                          crossAxisAlignment: CrossAxisAlignment.start,
+                                          children: [
+                                            Text('Общий оборот: ${totalTurnover.toStringAsFixed(2)}'),
+                                            Text('Общая прибыль: ${totalProfit.toStringAsFixed(2)}'),
+                                          ],
+                                        ),
+                                      ),
+                                    );
+                                  },
+                                );
+                              },
+                            ),
                           ],
                         );
                       },
@@ -1408,5 +1538,36 @@ class _CashScreenState extends State<CashScreen> {
               ),
             ),
     );
+  }
+
+  Future<void> _saveSummaryStats(BuildContext context) async {
+    final dateRange = _getDateRange();
+    final startDate = dateRange['start'].toDate();
+    final endDate = dateRange['end'].toDate();
+
+    final transactions = await _cashService
+        .getTransactions(startDate, endDate)
+        .first; // Получаем текущие транзакции
+    final stats = _calculateStats(transactions);
+
+    try {
+      await _cashService.saveSummaryStats(
+        startDate: startDate,
+        endDate: endDate,
+        totalTurnover: stats['totalTurnover'] as double,
+        totalProfit: stats['totalProfit'] as double,
+        buyAmounts: stats['buyAmounts'] as Map<String, double>,
+        sellAmounts: stats['sellAmounts'] as Map<String, double>,
+        buyCounts: stats['buyCounts'] as Map<String, int>,
+        sellCounts: stats['sellCounts'] as Map<String, int>,
+      );
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Отчёт сохранён')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка при сохранении: $e')),
+      );
+    }
   }
 }
