@@ -1,9 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:exchange_app/screens/cash_screen.dart';
 import 'package:exchange_app/screens/currency_screen.dart';
-import 'package:exchange_app/screens/events_screen.dart';
 import 'package:exchange_app/screens/login_screen.dart';
 import 'package:exchange_app/screens/users_screen.dart';
 import 'package:exchange_app/services/auth_service.dart';
