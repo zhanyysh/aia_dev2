@@ -30,7 +30,7 @@ class _LoginScreenState extends State<LoginScreen> {
       setState(() {
         _isLoading = false;
       });
-      // Перенаправляем на главную страницу после успешного входа
+
       Navigator.pushReplacementNamed(context, '/main');
     } on FirebaseAuthException catch (e) {
       setState(() {
