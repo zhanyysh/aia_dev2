@@ -1,6 +1,7 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import 'package:exchange_app/services/auth_service.dart';
+import 'package:exchange_app/screens/home_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -31,7 +32,12 @@ class _LoginScreenState extends State<LoginScreen> {
         _isLoading = false;
       });
 
-      Navigator.pushReplacementNamed(context, '/main');
+      if (!mounted) return;
+      
+      // Instead of using named routes, navigate directly to HomeScreen
+      Navigator.of(context).pushReplacement(
+        MaterialPageRoute(builder: (context) => const HomeScreen()),
+      );
     } on FirebaseAuthException catch (e) {
       setState(() {
         _isLoading = false;
