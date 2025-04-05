@@ -461,7 +461,7 @@ class _EventsScreenState extends State<EventsScreen> {
                 ),
               ),
               const SizedBox(height: _padding),
-              // Таблица "Прибыль с каждой валюты"
+              // Таблица "Прибыль с каждой валюты" с новой формулой
               Card(
                 elevation: 4,
                 shape: RoundedRectangleBorder(
@@ -499,6 +499,7 @@ class _EventsScreenState extends State<EventsScreen> {
 
                       final events = snapshot.data!.docs;
 
+                      // Группировка транзакций по валютам
                       Map<String, Map<String, dynamic>> currencyProfitStats = {};
 
                       for (var eventDoc in events) {
@@ -508,48 +509,45 @@ class _EventsScreenState extends State<EventsScreen> {
                         final amount = (event['amount'] as num?)?.toDouble() ?? 0.0;
                         final rate = (event['rate'] as num?)?.toDouble() ?? 0.0;
 
+                        // Инициализируем статистику для валюты, если её ещё нет
                         if (!currencyProfitStats.containsKey(currency)) {
                           currencyProfitStats[currency] = {
-                            'totalBuyAmount': 0.0,
-                            'totalBuyRate': 0.0,
-                            'buyCount': 0,
-                            'totalSellAmount': 0.0,
-                            'totalSellRate': 0.0,
-                            'sellCount': 0,
+                            'totalBuyCost': 0.0, // Общая стоимость покупок (amount * rate)
+                            'totalBuyAmount': 0.0, // Общее количество купленных валют
+                            'totalSellCost': 0.0, // Общая стоимость продаж (amount * rate)
+                            'totalSellAmount': 0.0, // Общее количество проданных валют
                           };
                         }
 
+                        // Обновляем статистику
                         if (type == 'buy') {
+                          currencyProfitStats[currency]!['totalBuyCost'] += amount * rate;
                           currencyProfitStats[currency]!['totalBuyAmount'] += amount;
-                          currencyProfitStats[currency]!['totalBuyRate'] += rate;
-                          currencyProfitStats[currency]!['buyCount']++;
                         } else if (type == 'sell') {
+                          currencyProfitStats[currency]!['totalSellCost'] += amount * rate;
                           currencyProfitStats[currency]!['totalSellAmount'] += amount;
-                          currencyProfitStats[currency]!['totalSellRate'] += rate;
-                          currencyProfitStats[currency]!['sellCount']++;
                         }
                       }
 
+                      // Формируем список для таблицы "Прибыль с каждой валюты"
                       List<Map<String, dynamic>> profitStatsList = [];
                       currencyProfitStats.forEach((currency, stats) {
-                        final buyCount = stats['buyCount'];
-                        final sellCount = stats['sellCount'];
-
-                        final avgBuyRate = buyCount > 0 ? stats['totalBuyRate'] / buyCount : 0.0;
-                        final avgSellRate = sellCount > 0 ? stats['totalSellRate'] / sellCount : 0.0;
-
                         final totalBuyAmount = stats['totalBuyAmount'];
-                        final avgBuy = buyCount > 0 ? (totalBuyAmount * avgBuyRate) / buyCount : 0.0;
-
                         final totalSellAmount = stats['totalSellAmount'];
-                        final avgSell = sellCount > 0 ? (totalSellAmount * avgSellRate) / sellCount : 0.0;
 
-                        final profit = sellCount * (avgSell - avgBuy);
+                        // Средняя стоимость покупки = общая стоимость покупок / общее количество купленных валют
+                        final avgBuyCost = totalBuyAmount > 0 ? stats['totalBuyCost'] / totalBuyAmount : 0.0;
+
+                        // Средняя стоимость продажи = общая стоимость продаж / общее количество проданных валют
+                        final avgSellCost = totalSellAmount > 0 ? stats['totalSellCost'] / totalSellAmount : 0.0;
+
+                        // Прибыль = общее количество проданных валют * (средняя стоимость продажи - средняя стоимость покупки)
+                        final profit = totalSellAmount * (avgSellCost - avgBuyCost);
 
                         profitStatsList.add({
                           'currency': currency,
-                          'avgSellRate': avgSellRate,
-                          'sellCount': sellCount,
+                          'avgSellCost': avgSellCost,
+                          'totalSellAmount': totalSellAmount,
                           'profit': profit,
                         });
                       });
@@ -613,8 +611,8 @@ class _EventsScreenState extends State<EventsScreen> {
                                 rows: profitStatsList.map((stat) {
                                   return DataRow(cells: [
                                     DataCell(Text(stat['currency'])),
-                                    DataCell(Text(stat['avgSellRate'].toStringAsFixed(2))),
-                                    DataCell(Text(stat['sellCount'].toString())),
+                                    DataCell(Text(stat['avgSellCost'].toStringAsFixed(2))),
+                                    DataCell(Text(stat['totalSellAmount'].toString())),
                                     DataCell(Text(stat['profit'].toStringAsFixed(2))),
                                   ]);
                                 }).toList(),
