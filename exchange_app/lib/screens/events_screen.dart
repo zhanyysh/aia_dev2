@@ -15,7 +15,11 @@ class _EventsScreenState extends State<EventsScreen> {
   final TextEditingController _titleController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
   final TextEditingController _currencyController = TextEditingController();
+  final TextEditingController _newUserEmailController = TextEditingController();
+  final TextEditingController _newUserPasswordController = TextEditingController();
+  final TextEditingController _newUserUsernameController = TextEditingController();
   final AuthService _authService = AuthService();
+  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
 
   // Переменные для выбора периода
   String _selectedPeriod = 'Месяц'; // По умолчанию месяц
@@ -28,8 +32,9 @@ class _EventsScreenState extends State<EventsScreen> {
   final TextEditingController _endDateController = TextEditingController();
 
   Future<bool> _isSuperAdmin() async {
-    final user = _authService.getCurrentUser()!;
-    final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
+    final user = _authService.getCurrentUser();
+    if (user == null) return false;
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
     return userDoc.data()?['isSuperAdmin'] ?? false;
   }
 
@@ -47,7 +52,7 @@ class _EventsScreenState extends State<EventsScreen> {
     }
 
     try {
-      await FirebaseFirestore.instance
+      await _firestore
           .collection('users')
           .doc(user.uid)
           .collection('events')
@@ -71,7 +76,36 @@ class _EventsScreenState extends State<EventsScreen> {
     }
   }
 
-  // Метод для получения начальной и конечной даты в зависимости от выбранного периода
+  Future<void> _addUser() async {
+    final email = _newUserEmailController.text.trim();
+    final password = _newUserPasswordController.text.trim();
+    final username = _newUserUsernameController.text.trim();
+
+    if (email.isEmpty || password.isEmpty || username.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Заполните все поля')),
+      );
+      return;
+    }
+
+    try {
+      UserCredential userCredential = await _authService.signUp(email, password, username);
+      await _firestore.collection('users').doc(userCredential.user!.uid).update({
+        'isSuperAdmin': false, // Новый пользователь не супер-админ
+      });
+      _newUserEmailController.clear();
+      _newUserPasswordController.clear();
+      _newUserUsernameController.clear();
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Пользователь добавлен')),
+      );
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Ошибка: $e')),
+      );
+    }
+  }
+
   Map<String, dynamic> _getDateRange() {
     final now = DateTime.now();
     DateTime startDate;
@@ -79,7 +113,6 @@ class _EventsScreenState extends State<EventsScreen> {
 
     if (_selectedPeriod == 'Кастомный период' && _startDate != null && _endDate != null) {
       if (_endDate!.isBefore(_startDate!)) {
-        // Если конечная дата раньше начальной, показываем ошибку и возвращаем пустой диапазон
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Конечная дата не может быть раньше начальной')),
         );
@@ -89,9 +122,8 @@ class _EventsScreenState extends State<EventsScreen> {
         };
       }
       startDate = _startDate!;
-      endDate = _endDate!.add(const Duration(days: 1)); // Добавляем 1 день, чтобы включить события в течение конечного дня
+      endDate = _endDate!.add(const Duration(days: 1));
     } else if (_selectedPeriod == 'За все время') {
-      // Для "За все время" устанавливаем очень раннюю начальную дату
       startDate = DateTime(2000);
       endDate = now;
     } else {
@@ -115,7 +147,6 @@ class _EventsScreenState extends State<EventsScreen> {
     };
   }
 
-  // Метод для выбора даты
   Future<void> _selectDate(BuildContext context, bool isStartDate) async {
     final DateTime? picked = await showDatePicker(
       context: context,
@@ -141,6 +172,9 @@ class _EventsScreenState extends State<EventsScreen> {
     _titleController.dispose();
     _descriptionController.dispose();
     _currencyController.dispose();
+    _newUserEmailController.dispose();
+    _newUserPasswordController.dispose();
+    _newUserUsernameController.dispose();
     _startDateController.dispose();
     _endDateController.dispose();
     super.dispose();
@@ -192,7 +226,6 @@ class _EventsScreenState extends State<EventsScreen> {
                     ),
                   ],
                 ),
-                // Поля для кастомного периода
                 if (_selectedPeriod == 'Кастомный период') ...[
                   const SizedBox(height: 8),
                   Row(
@@ -231,13 +264,16 @@ class _EventsScreenState extends State<EventsScreen> {
             future: _isSuperAdmin(),
             builder: (context, snapshot) {
               if (snapshot.connectionState == ConnectionState.waiting) {
-                return const SizedBox.shrink();
+                return const Center(child: CircularProgressIndicator());
               }
               if (snapshot.hasData && snapshot.data == true) {
                 return Padding(
                   padding: const EdgeInsets.all(16.0),
                   child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
+                      // Форма для событий
+                      const Text('Добавить событие', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       TextField(
                         controller: _titleController,
                         decoration: const InputDecoration(
@@ -266,6 +302,38 @@ class _EventsScreenState extends State<EventsScreen> {
                         onPressed: _addEvent,
                         child: const Text('Добавить событие'),
                       ),
+                      const SizedBox(height: 20),
+                      // Форма для добавления пользователя
+                      const Text('Добавить пользователя', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      TextField(
+                        controller: _newUserEmailController,
+                        decoration: const InputDecoration(
+                          labelText: 'Email нового пользователя',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _newUserPasswordController,
+                        decoration: const InputDecoration(
+                          labelText: 'Пароль нового пользователя',
+                          border: OutlineInputBorder(),
+                        ),
+                        obscureText: true,
+                      ),
+                      const SizedBox(height: 8),
+                      TextField(
+                        controller: _newUserUsernameController,
+                        decoration: const InputDecoration(
+                          labelText: 'Имя нового пользователя',
+                          border: OutlineInputBorder(),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      ElevatedButton(
+                        onPressed: _addUser,
+                        child: const Text('Добавить пользователя'),
+                      ),
                     ],
                   ),
                 );
@@ -279,7 +347,7 @@ class _EventsScreenState extends State<EventsScreen> {
               stream: () {
                 final dateRange = _getDateRange();
                 if (_selectedPeriod == 'Кастомный период' && _startDate != null && _endDate != null) {
-                  return FirebaseFirestore.instance
+                  return _firestore
                       .collection('users')
                       .doc(user.uid)
                       .collection('events')
@@ -287,27 +355,19 @@ class _EventsScreenState extends State<EventsScreen> {
                       .where('date', isLessThan: dateRange['end'])
                       .orderBy('date', descending: true)
                       .snapshots();
-                } else if (_selectedPeriod != 'Кастомный период') {
-                  if (_selectedPeriod == 'За все время') {
-                    return FirebaseFirestore.instance
-                        .collection('users')
-                        .doc(user.uid)
-                        .collection('events')
-                        .orderBy('date', descending: true)
-                        .snapshots();
-                  }
-                  return FirebaseFirestore.instance
+                } else if (_selectedPeriod == 'За все время') {
+                  return _firestore
+                      .collection('users')
+                      .doc(user.uid)
+                      .collection('events')
+                      .orderBy('date', descending: true)
+                      .snapshots();
+                } else {
+                  return _firestore
                       .collection('users')
                       .doc(user.uid)
                       .collection('events')
                       .where('date', isGreaterThanOrEqualTo: dateRange['start'])
-                      .orderBy('date', descending: true)
-                      .snapshots();
-                } else {
-                  return FirebaseFirestore.instance
-                      .collection('users')
-                      .doc(user.uid)
-                      .collection('events')
                       .orderBy('date', descending: true)
                       .snapshots();
                 }
@@ -327,14 +387,12 @@ class _EventsScreenState extends State<EventsScreen> {
 
                 // Группировка транзакций по валютам
                 Map<String, Map<String, dynamic>> currencyStats = {};
-
                 for (var eventDoc in events) {
                   final event = eventDoc.data() as Map<String, dynamic>;
                   final type = event['type'] ?? 'custom';
                   final currency = event['currency'] ?? 'Unknown';
                   final amount = (event['amount'] as num?)?.toDouble() ?? 0.0;
 
-                  // Инициализируем статистику для валюты, если её ещё нет
                   if (!currencyStats.containsKey(currency)) {
                     currencyStats[currency] = {
                       'totalBuyAmount': 0.0,
@@ -344,7 +402,6 @@ class _EventsScreenState extends State<EventsScreen> {
                     };
                   }
 
-                  // Обновляем статистику
                   if (type == 'buy') {
                     currencyStats[currency]!['totalBuyAmount'] += amount;
                     currencyStats[currency]!['buyCount']++;
@@ -368,7 +425,6 @@ class _EventsScreenState extends State<EventsScreen> {
 
                 return Column(
                   children: [
-                    // Таблица
                     Expanded(
                       child: SingleChildScrollView(
                         scrollDirection: Axis.horizontal,
@@ -389,9 +445,7 @@ class _EventsScreenState extends State<EventsScreen> {
                             final rate = event['rate']?.toString() ?? '0';
                             final total = event['total']?.toString() ?? '0';
                             final date = (event['date'] as Timestamp?)?.toDate();
-                            final formattedDate = date != null
-                                ? DateFormat('dd.MM.yyyy').format(date)
-                                : '';
+                            final formattedDate = date != null ? DateFormat('dd.MM.yyyy').format(date) : '';
 
                             return DataRow(cells: [
                               DataCell(Text(type == 'sell'
@@ -409,7 +463,6 @@ class _EventsScreenState extends State<EventsScreen> {
                         ),
                       ),
                     ),
-                    // Статистика под таблицей
                     Padding(
                       padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
                       child: Column(
@@ -421,10 +474,7 @@ class _EventsScreenState extends State<EventsScreen> {
                           ),
                           const SizedBox(height: 8),
                           if (statsList.isEmpty)
-                            const Text(
-                              'Нет данных для отображения',
-                              style: TextStyle(fontSize: 16),
-                            )
+                            const Text('Нет данных для отображения', style: TextStyle(fontSize: 16))
                           else
                             SingleChildScrollView(
                               scrollDirection: Axis.horizontal,

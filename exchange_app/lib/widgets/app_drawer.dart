@@ -5,7 +5,6 @@ import 'package:exchange_app/screens/currency_screen.dart';
 import 'package:exchange_app/screens/events_screen.dart';
 import 'package:exchange_app/screens/login_screen.dart';
 import 'package:exchange_app/screens/main_screen.dart';
-import 'package:exchange_app/screens/signup_screen.dart'; // Импорт уже есть
 import 'package:exchange_app/services/auth_service.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -104,20 +103,6 @@ class AppDrawer extends StatelessWidget {
                 Navigator.pushReplacement(
                   context,
                   MaterialPageRoute(builder: (context) => const LoginScreen()),
-                );
-              } else {
-                Navigator.pop(context);
-              }
-            },
-          ),
-          ListTile(
-            title: const Text('Регистрация'),
-            selected: currentRoute == 'signup',
-            onTap: () {
-              if (currentRoute != 'signup') {
-                Navigator.pushReplacement(
-                  context,
-                  MaterialPageRoute(builder: (context) => const SignUpScreen()), // Исправляем на SignUpScreen
                 );
               } else {
                 Navigator.pop(context);

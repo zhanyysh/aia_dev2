@@ -86,14 +86,6 @@ class _LoginScreenState extends State<LoginScreen> {
                     onPressed: _handleLogin,
                     child: const Text('Войти'),
                   ),
-            const SizedBox(height: 16),
-            TextButton(
-              onPressed: () {
-                // Перенаправляем на страницу регистрации (позже добавим)
-                Navigator.pushNamed(context, '/signup');
-              },
-              child: const Text('Нет аккаунта? Зарегистрируйтесь'),
-            ),
           ],
         ),
       ),
