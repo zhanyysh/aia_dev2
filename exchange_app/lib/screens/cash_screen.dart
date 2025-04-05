@@ -68,7 +68,6 @@ class _CashScreenState extends State<CashScreen> {
     'Месяц',
     'Кастомный период',
     'За все время',
-    'Ручной выбор'
   ];
   DateTime _startDate = DateTime.now().subtract(const Duration(days: 7));
   DateTime _endDate = DateTime.now();
@@ -97,20 +96,7 @@ class _CashScreenState extends State<CashScreen> {
     DateTime startDate;
     DateTime endDate;
 
-    if (_selectedPeriod == 'Ручной выбор') {
-      startDate = _startDate;
-      endDate = _endDate;
-      if (endDate.isBefore(startDate)) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Конечная дата не может быть раньше начальной')),
-        );
-        return {
-          'start': Timestamp.fromDate(now),
-          'end': Timestamp.fromDate(now),
-        };
-      }
-      endDate = DateTime(endDate.year, endDate.month, endDate.day, 23, 59, 59);
-    } else if (_selectedPeriod == 'Кастомный период' &&
+    if (_selectedPeriod == 'Кастомный период' &&
         _startDateController.text.isNotEmpty &&
         _endDateController.text.isNotEmpty) {
       startDate = DateFormat('dd.MM.yyyy').parse(_startDateController.text);
@@ -189,42 +175,73 @@ class _CashScreenState extends State<CashScreen> {
     Map<String, double> sellAmounts = {};
     Map<String, int> buyCounts = {};
     Map<String, int> sellCounts = {};
-    Map<String, double> buyRates = {}; // Для подсчета суммы курсов покупок
-    Map<String, double> sellRates = {}; // Для подсчета суммы курсов продаж
-    Map<String, double> buyTotals = {}; // Для подсчета итоговых сумм (в рублях)
-    Map<String, double> sellTotals = {}; // Для подсчета итоговых сумм (в рублях)
+    Map<String, double> buyTotals = {}; // Для подсчета итоговых сумм (в сомах)
+    Map<String, double> sellTotals = {}; // Для подсчета итоговых сумм (в сомах)
+    Map<String, double> buyAvgRates = {}; // Средневзвешенный курс покупки
+    Map<String, double> profits = {}; // Прибыль по каждой валюте
 
+    // Сортируем транзакции по дате, чтобы правильно учитывать последовательность операций
+    transactions.sort((a, b) => a.transactionDate.compareTo(b.transactionDate));
+
+    // Проходим по всем транзакциям для подсчета сумм и количества
     for (var tx in transactions) {
       if (tx.type == 'custom' && (tx.amount == 0 || tx.total == 0)) {
         continue;
       }
       if (tx.type == 'buy') {
-        buyAmounts[tx.currency] = (buyAmounts[tx.currency] ?? 0) + tx.amount; // Сумма валюты
-        buyTotals[tx.currency] = (buyTotals[tx.currency] ?? 0) + tx.total; // Итоговая сумма в рублях
-        buyRates[tx.currency] = (buyRates[tx.currency] ?? 0) + tx.rate; // Сумма курсов
+        buyAmounts[tx.currency] = (buyAmounts[tx.currency] ?? 0) + tx.amount;
+        buyTotals[tx.currency] = (buyTotals[tx.currency] ?? 0) + tx.total;
         buyCounts[tx.currency] = (buyCounts[tx.currency] ?? 0) + 1;
       } else if (tx.type == 'sell') {
-        sellAmounts[tx.currency] = (sellAmounts[tx.currency] ?? 0) + tx.amount; // Сумма валюты
-        sellTotals[tx.currency] = (sellTotals[tx.currency] ?? 0) + tx.total; // Итоговая сумма в рублях
-        sellRates[tx.currency] = (sellRates[tx.currency] ?? 0) + tx.rate; // Сумма курсов
+        sellAmounts[tx.currency] = (sellAmounts[tx.currency] ?? 0) + tx.amount;
+        sellTotals[tx.currency] = (sellTotals[tx.currency] ?? 0) + tx.total;
         sellCounts[tx.currency] = (sellCounts[tx.currency] ?? 0) + 1;
+      }
+    }
+
+    // Рассчитываем средневзвешенный курс покупки для каждой валюты
+    for (var currency in buyAmounts.keys) {
+      buyAvgRates[currency] = buyAmounts[currency]! > 0 ? (buyTotals[currency]! / buyAmounts[currency]!) : 0;
+    }
+
+    // Рассчитываем прибыль с учетом остатков
+    for (var currency in buyAmounts.keys) {
+      double bought = buyAmounts[currency] ?? 0;
+      double sold = sellAmounts[currency] ?? 0;
+      double avgBuyRate = buyAvgRates[currency] ?? 0;
+
+      if (sold == 0) {
+        // Если ничего не продано, прибыль 0
+        profits[currency] = 0;
+      } else {
+        // Рассчитываем прибыль только по проданному объему
+        double soldAmountInSom = sellTotals[currency] ?? 0; // Сумма продаж в сомах
+        double boughtAmountForSoldInSom = sold * avgBuyRate; // Сколько стоило купить проданный объем
+        double profit = soldAmountInSom - boughtAmountForSoldInSom;
+
+        // Если есть остаток (куплено больше, чем продано), прибыль не должна быть отрицательной
+        if (bought > sold && profit < 0) {
+          profits[currency] = 0;
+        } else {
+          profits[currency] = profit;
+        }
       }
     }
 
     double totalBuyAmount = buyTotals.values.fold(0, (sum, amount) => sum + amount);
     double totalSellAmount = sellTotals.values.fold(0, (sum, amount) => sum + amount);
     double totalTurnover = totalBuyAmount + totalSellAmount;
-    double totalProfit = totalSellAmount - totalBuyAmount;
+    double totalProfit = profits.values.fold(0, (sum, profit) => sum + profit);
 
     return {
       'buyAmounts': buyAmounts,
       'sellAmounts': sellAmounts,
       'buyCounts': buyCounts,
       'sellCounts': sellCounts,
-      'buyRates': buyRates, // Добавляем суммы курсов
-      'sellRates': sellRates, // Добавляем суммы курсов
-      'buyTotals': buyTotals, // Для прибыли
-      'sellTotals': sellTotals, // Для прибыли
+      'buyTotals': buyTotals,
+      'sellTotals': sellTotals,
+      'buyAvgRates': buyAvgRates,
+      'profits': profits,
       'totalTurnover': totalTurnover,
       'totalProfit': totalProfit,
       'totalBuyAmount': totalBuyAmount,
@@ -235,49 +252,106 @@ class _CashScreenState extends State<CashScreen> {
   Map<String, dynamic> _calculateDailyStats(List<CashTransaction> transactions, DateTime startDate, DateTime endDate) {
     Map<String, Map<DateTime, double>> dailyBuyAmounts = {};
     Map<String, Map<DateTime, double>> dailySellAmounts = {};
+    Map<String, Map<DateTime, double>> dailyBuyTotals = {};
+    Map<String, Map<DateTime, double>> dailySellTotals = {};
     Map<String, Map<DateTime, int>> dailyBuyCounts = {};
     Map<String, Map<DateTime, int>> dailySellCounts = {};
     Map<String, Map<DateTime, double>> dailyProfits = {};
+    Map<String, Map<DateTime, double>> dailyBuyAvgRates = {};
 
+    // Инициализация словарей для каждой валюты и каждого дня
     for (var currency in transactions.map((tx) => tx.currency).toSet()) {
       dailyBuyAmounts[currency] = {};
       dailySellAmounts[currency] = {};
+      dailyBuyTotals[currency] = {};
+      dailySellTotals[currency] = {};
       dailyBuyCounts[currency] = {};
       dailySellCounts[currency] = {};
       dailyProfits[currency] = {};
+      dailyBuyAvgRates[currency] = {};
 
       DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
       while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
         dailyBuyAmounts[currency]![currentDate] = 0;
         dailySellAmounts[currency]![currentDate] = 0;
+        dailyBuyTotals[currency]![currentDate] = 0;
+        dailySellTotals[currency]![currentDate] = 0;
         dailyBuyCounts[currency]![currentDate] = 0;
         dailySellCounts[currency]![currentDate] = 0;
         dailyProfits[currency]![currentDate] = 0;
+        dailyBuyAvgRates[currency]![currentDate] = 0;
         currentDate = currentDate.add(const Duration(days: 1));
       }
     }
 
+    // Подсчет сумм и количества операций по дням
     for (var tx in transactions) {
       if (tx.type == 'custom' && (tx.amount == 0 || tx.total == 0)) {
         continue;
       }
       DateTime txDate = DateTime(tx.transactionDate.year, tx.transactionDate.month, tx.transactionDate.day);
       if (tx.type == 'buy') {
-        dailyBuyAmounts[tx.currency]![txDate] = (dailyBuyAmounts[tx.currency]![txDate] ?? 0) + tx.amount; // Используем amount
+        dailyBuyAmounts[tx.currency]![txDate] = (dailyBuyAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailyBuyTotals[tx.currency]![txDate] = (dailyBuyTotals[tx.currency]![txDate] ?? 0) + tx.total;
         dailyBuyCounts[tx.currency]![txDate] = (dailyBuyCounts[tx.currency]![txDate] ?? 0) + 1;
       } else if (tx.type == 'sell') {
-        dailySellAmounts[tx.currency]![txDate] = (dailySellAmounts[tx.currency]![txDate] ?? 0) + tx.amount; // Используем amount
+        dailySellAmounts[tx.currency]![txDate] = (dailySellAmounts[tx.currency]![txDate] ?? 0) + tx.amount;
+        dailySellTotals[tx.currency]![txDate] = (dailySellTotals[tx.currency]![txDate] ?? 0) + tx.total;
         dailySellCounts[tx.currency]![txDate] = (dailySellCounts[tx.currency]![txDate] ?? 0) + 1;
-        dailyProfits[tx.currency]![txDate] = (dailyProfits[tx.currency]![txDate] ?? 0) + (tx.total - (dailyBuyAmounts[tx.currency]![txDate] ?? 0));
+      }
+    }
+
+    // Рассчитываем средневзвешенный курс покупки и прибыль по дням
+    for (var currency in transactions.map((tx) => tx.currency).toSet()) {
+      double cumulativeBuyAmount = 0;
+      double cumulativeBuyTotal = 0;
+
+      DateTime currentDate = DateTime(startDate.year, startDate.month, startDate.day);
+      while (currentDate.isBefore(endDate) || currentDate.isAtSameMomentAs(endDate)) {
+        // Обновляем кумулятивные значения для покупок
+        cumulativeBuyAmount += dailyBuyAmounts[currency]![currentDate] ?? 0;
+        cumulativeBuyTotal += dailyBuyTotals[currency]![currentDate] ?? 0;
+
+        // Рассчитываем средневзвешенный курс покупки на текущий день
+        double avgBuyRate = cumulativeBuyAmount > 0 ? cumulativeBuyTotal / cumulativeBuyAmount : 0;
+        dailyBuyAvgRates[currency]![currentDate] = avgBuyRate;
+
+        // Рассчитываем прибыль на текущий день
+        double sold = dailySellAmounts[currency]![currentDate] ?? 0;
+        if (sold > 0) {
+          double soldAmountInSom = dailySellTotals[currency]![currentDate] ?? 0;
+          double boughtAmountForSoldInSom = sold * avgBuyRate;
+          double profit = soldAmountInSom - boughtAmountForSoldInSom;
+
+          // Если на текущий день есть остаток (кумулятивно куплено больше, чем продано), прибыль не должна быть отрицательной
+          double cumulativeSold = 0;
+          DateTime tempDate = DateTime(startDate.year, startDate.month, startDate.day);
+          while (tempDate.isBefore(currentDate) || tempDate.isAtSameMomentAs(currentDate)) {
+            cumulativeSold += dailySellAmounts[currency]![tempDate] ?? 0;
+            tempDate = tempDate.add(const Duration(days: 1));
+          }
+          if (cumulativeBuyAmount > cumulativeSold && profit < 0) {
+            dailyProfits[currency]![currentDate] = 0;
+          } else {
+            dailyProfits[currency]![currentDate] = profit;
+          }
+        } else {
+          dailyProfits[currency]![currentDate] = 0;
+        }
+
+        currentDate = currentDate.add(const Duration(days: 1));
       }
     }
 
     return {
       'dailyBuyAmounts': dailyBuyAmounts,
       'dailySellAmounts': dailySellAmounts,
+      'dailyBuyTotals': dailyBuyTotals,
+      'dailySellTotals': dailySellTotals,
       'dailyBuyCounts': dailyBuyCounts,
       'dailySellCounts': dailySellCounts,
       'dailyProfits': dailyProfits,
+      'dailyBuyAvgRates': dailyBuyAvgRates,
     };
   }
 
@@ -317,11 +391,6 @@ class _CashScreenState extends State<CashScreen> {
             onPressed: _isAuthenticated ? _clearEvents : null,
             tooltip: 'Очистить транзакции',
           ),
-          IconButton(
-            icon: const Icon(Icons.save),
-            onPressed: _isAuthenticated ? () => _saveSummaryStats(context) : null,
-            tooltip: 'Сохранить отчёт',
-          ),
         ],
       ),
       body: _isAuthenticated
@@ -350,7 +419,7 @@ class _CashScreenState extends State<CashScreen> {
                             onChanged: (value) {
                               setState(() {
                                 _selectedPeriod = value!;
-                                if (_selectedPeriod != 'Кастомный период' && _selectedPeriod != 'Ручной выбор') {
+                                if (_selectedPeriod != 'Кастомный период') {
                                   _startDateController.clear();
                                   _endDateController.clear();
                                 }
@@ -359,7 +428,7 @@ class _CashScreenState extends State<CashScreen> {
                           ),
                         ],
                       ),
-                      if (_selectedPeriod == 'Кастомный период' || _selectedPeriod == 'Ручной выбор') ...[
+                      if (_selectedPeriod == 'Кастомный период') ...[
                         const SizedBox(height: 8),
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
@@ -386,35 +455,33 @@ class _CashScreenState extends State<CashScreen> {
                             ),
                           ],
                         ),
-                        if (_selectedPeriod == 'Кастомный период') ...[
-                          Row(
-                            children: [
-                              Expanded(
-                                child: TextField(
-                                  controller: _startDateController,
-                                  readOnly: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Начальная дата',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onTap: () => _selectDate(context, true),
+                        Row(
+                          children: [
+                            Expanded(
+                              child: TextField(
+                                controller: _startDateController,
+                                readOnly: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Начальная дата',
+                                  border: OutlineInputBorder(),
                                 ),
+                                onTap: () => _selectDate(context, true),
                               ),
-                              const SizedBox(width: 16),
-                              Expanded(
-                                child: TextField(
-                                  controller: _endDateController,
-                                  readOnly: true,
-                                  decoration: const InputDecoration(
-                                    labelText: 'Конечная дата',
-                                    border: OutlineInputBorder(),
-                                  ),
-                                  onTap: () => _selectDate(context, false),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: TextField(
+                                controller: _endDateController,
+                                readOnly: true,
+                                decoration: const InputDecoration(
+                                  labelText: 'Конечная дата',
+                                  border: OutlineInputBorder(),
                                 ),
+                                onTap: () => _selectDate(context, false),
                               ),
-                            ],
-                          ),
-                        ],
+                            ),
+                          ],
+                        ),
                       ],
                     ],
                   ),
@@ -476,10 +543,10 @@ class _CashScreenState extends State<CashScreen> {
                         final sellAmounts = stats['sellAmounts'] as Map<String, double>;
                         final buyCounts = stats['buyCounts'] as Map<String, int>;
                         final sellCounts = stats['sellCounts'] as Map<String, int>;
-                        final buyRates = stats['buyRates'] as Map<String, double>;
-                        final sellRates = stats['sellRates'] as Map<String, double>;
                         final buyTotals = stats['buyTotals'] as Map<String, double>;
                         final sellTotals = stats['sellTotals'] as Map<String, double>;
+                        final buyAvgRates = stats['buyAvgRates'] as Map<String, double>;
+                        final profits = stats['profits'] as Map<String, double>;
                         final totalTurnover = stats['totalTurnover'] as double;
                         final totalProfit = stats['totalProfit'] as double;
                         final totalBuyAmount = stats['totalBuyAmount'] as double;
@@ -490,16 +557,15 @@ class _CashScreenState extends State<CashScreen> {
                         final dailyBuyCounts = dailyStats['dailyBuyCounts'] as Map<String, Map<DateTime, int>>;
                         final dailySellCounts = dailyStats['dailySellCounts'] as Map<String, Map<DateTime, int>>;
                         final dailyProfits = dailyStats['dailyProfits'] as Map<String, Map<DateTime, double>>;
+                        final dailyBuyAvgRates = dailyStats['dailyBuyAvgRates'] as Map<String, Map<DateTime, double>>;
 
                         List<String> currencies = buyAmounts.keys.followedBy(sellAmounts.keys).toSet().toList();
                         List<DataRow> rows = currencies.map((currency) {
-                          double buyAvg = (buyCounts[currency] ?? 0) > 0
-                              ? (buyRates[currency] ?? 0) / buyCounts[currency]! // Средний курс
+                          double buyAvg = buyAvgRates[currency] ?? 0;
+                          double sellAvg = (sellAmounts[currency] ?? 0) > 0
+                              ? (sellTotals[currency] ?? 0) / sellAmounts[currency]!
                               : 0;
-                          double sellAvg = (sellCounts[currency] ?? 0) > 0
-                              ? (sellRates[currency] ?? 0) / sellCounts[currency]! // Средний курс
-                              : 0;
-                          double profit = (sellTotals[currency] ?? 0) - (buyTotals[currency] ?? 0);
+                          double profit = profits[currency] ?? 0;
 
                           return DataRow(cells: [
                             DataCell(Text(currency)),
@@ -805,13 +871,13 @@ class _CashScreenState extends State<CashScreen> {
                           buyAmountSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double value = buyAmounts[currency] ?? 0;
+                            double value = buyTotals[currency] ?? 0;
                             double percentage = totalBuyAmount > 0 ? (value / totalBuyAmount * 100) : 0;
                             Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
                             buyAmountIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${value.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${value.toStringAsFixed(2)} сом (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
@@ -827,13 +893,13 @@ class _CashScreenState extends State<CashScreen> {
                           sellAmountSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double value = sellAmounts[currency] ?? 0;
+                            double value = sellTotals[currency] ?? 0;
                             double percentage = totalSellAmount > 0 ? (value / totalSellAmount * 100) : 0;
                             Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
                             sellAmountIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${value.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${value.toStringAsFixed(2)} сом (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
@@ -853,9 +919,11 @@ class _CashScreenState extends State<CashScreen> {
                             List<BarChartRodData> rods = [];
                             for (String currency in currencies) {
                               double buyValue = dailyBuyAmounts[currency]![currentDate] ?? 0;
+                              double buyRate = dailyBuyAvgRates[currency]![currentDate] ?? 0;
+                              double buyValueInSom = buyValue * buyRate;
                               rods.add(
                                 BarChartRodData(
-                                  toY: buyValue,
+                                  toY: buyValueInSom,
                                   color: currencyColors[currency]!,
                                   width: 10,
                                   borderRadius: BorderRadius.zero,
@@ -878,7 +946,7 @@ class _CashScreenState extends State<CashScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Сумма покупок', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Сумма покупок (в сомах)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 16,
@@ -938,7 +1006,7 @@ class _CashScreenState extends State<CashScreen> {
                                               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                                                 String currency = currencies[rodIndex];
                                                 return BarTooltipItem(
-                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)} сом',
                                                   const TextStyle(color: Colors.white),
                                                 );
                                               },
@@ -960,9 +1028,11 @@ class _CashScreenState extends State<CashScreen> {
                             List<BarChartRodData> rods = [];
                             for (String currency in currencies) {
                               double sellValue = dailySellAmounts[currency]![currentDate] ?? 0;
+                              double sellRate = (sellTotals[currency] ?? 0) / (sellAmounts[currency] ?? 1);
+                              double sellValueInSom = sellValue * sellRate;
                               rods.add(
                                 BarChartRodData(
-                                  toY: sellValue,
+                                  toY: sellValueInSom,
                                   color: currencyColors[currency]!,
                                   width: 10,
                                   borderRadius: BorderRadius.zero,
@@ -985,7 +1055,7 @@ class _CashScreenState extends State<CashScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Сумма продаж', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Сумма продаж (в сомах)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 16,
@@ -1045,7 +1115,7 @@ class _CashScreenState extends State<CashScreen> {
                                               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                                                 String currency = currencies[rodIndex];
                                                 return BarTooltipItem(
-                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)} сом',
                                                   const TextStyle(color: Colors.white),
                                                 );
                                               },
@@ -1062,24 +1132,23 @@ class _CashScreenState extends State<CashScreen> {
                         }
 
                         if (_chartType == 'Прибыль') {
-                          double totalProfitForPercentage =
-                              currencies.fold(0, (sum, curr) => sum + ((sellTotals[curr] ?? 0) - (buyTotals[curr] ?? 0)));
+                          double totalProfitForPercentage = profits.values.fold(0, (sum, profit) => sum + profit);
                           profitSections = currencies.asMap().entries.map((entry) {
                             int idx = entry.key;
                             String currency = entry.value;
-                            double profit = (sellTotals[currency] ?? 0) - (buyTotals[currency] ?? 0);
-                            double percentage = totalProfitForPercentage > 0 ? (profit / totalProfitForPercentage * 100) : 0;
+                            double profit = profits[currency] ?? 0;
+                            double percentage = totalProfitForPercentage != 0 ? (profit / totalProfitForPercentage * 100) : 0;
                             Color sectionColor = Colors.primaries[idx % Colors.primaries.length];
                             profitIndicators.add(
                               Indicator(
                                 color: sectionColor,
-                                text: '$currency: ${profit.toStringAsFixed(2)} $currency (${percentage.toStringAsFixed(0)}%)',
+                                text: '$currency: ${profit.toStringAsFixed(2)} сом (${percentage.toStringAsFixed(0)}%)',
                                 isSquare: true,
                               ),
                             );
                             return PieChartSectionData(
                               color: sectionColor,
-                              value: profit > 0 ? profit : 0.001,
+                              value: profit != 0 ? profit.abs() : 0.001,
                               title: currency,
                               radius: _touchedIndex == idx ? 60 : 50,
                               titleStyle: const TextStyle(fontSize: 12, color: Colors.white),
@@ -1107,7 +1176,7 @@ class _CashScreenState extends State<CashScreen> {
                                 x: dayIndex,
                                 barRods: rods,
                                 showingTooltipIndicators:
-                                    rods.asMap().entries.where((entry) => entry.value.toY > 0).map((entry) => entry.key).toList(),
+                                    rods.asMap().entries.where((entry) => entry.value.toY != 0).map((entry) => entry.key).toList(),
                               ),
                             );
                             currentDate = currentDate.add(const Duration(days: 1));
@@ -1118,7 +1187,7 @@ class _CashScreenState extends State<CashScreen> {
                             Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text('Прибыль', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                const Text('Прибыль (в сомах)', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
                                 const SizedBox(height: 8),
                                 Wrap(
                                   spacing: 16,
@@ -1178,7 +1247,7 @@ class _CashScreenState extends State<CashScreen> {
                                               getTooltipItem: (group, groupIndex, rod, rodIndex) {
                                                 String currency = currencies[rodIndex];
                                                 return BarTooltipItem(
-                                                  '$currency: ${rod.toY.toStringAsFixed(2)}',
+                                                  '$currency: ${rod.toY.toStringAsFixed(2)} сом',
                                                   const TextStyle(color: Colors.white),
                                                 );
                                               },
@@ -1477,51 +1546,6 @@ class _CashScreenState extends State<CashScreen> {
                             Text('Общий оборот: ${totalTurnover.toStringAsFixed(2)}'),
                             Text('Общая прибыль: ${totalProfit.toStringAsFixed(2)}'),
                             const SizedBox(height: 20),
-                            const Text('Сохраненные отчеты:', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                            StreamBuilder<List<Map<String, dynamic>>>(
-                              stream: _cashService.getSummaryStats(),
-                              builder: (context, snapshot) {
-                                if (snapshot.connectionState == ConnectionState.waiting) {
-                                  return const Center(child: CircularProgressIndicator());
-                                }
-                                if (snapshot.hasError) {
-                                  return Center(child: Text('Ошибка: ${snapshot.error.toString()}'));
-                                }
-                                if (!snapshot.hasData || snapshot.data!.isEmpty) {
-                                  return const Center(child: Text('Нет сохраненных отчетов'));
-                                }
-
-                                final summaries = snapshot.data!;
-                                return ListView.builder(
-                                  shrinkWrap: true,
-                                  physics: const NeverScrollableScrollPhysics(),
-                                  itemCount: summaries.length,
-                                  itemBuilder: (context, index) {
-                                    final summary = summaries[index];
-                                    final startDate = (summary['startDate'] as Timestamp).toDate();
-                                    final endDate = (summary['endDate'] as Timestamp).toDate();
-                                    final totalTurnover = summary['totalTurnover'] as double;
-                                    final totalProfit = summary['totalProfit'] as double;
-
-                                    return Card(
-                                      margin: const EdgeInsets.symmetric(vertical: 8.0),
-                                      child: ListTile(
-                                        title: Text(
-                                          'Период: ${DateFormat('dd.MM.yyyy').format(startDate)} - ${DateFormat('dd.MM.yyyy').format(endDate)}',
-                                        ),
-                                        subtitle: Column(
-                                          crossAxisAlignment: CrossAxisAlignment.start,
-                                          children: [
-                                            Text('Общий оборот: ${totalTurnover.toStringAsFixed(2)}'),
-                                            Text('Общая прибыль: ${totalProfit.toStringAsFixed(2)}'),
-                                          ],
-                                        ),
-                                      ),
-                                    );
-                                  },
-                                );
-                              },
-                            ),
                           ],
                         );
                       },
@@ -1538,36 +1562,5 @@ class _CashScreenState extends State<CashScreen> {
               ),
             ),
     );
-  }
-
-  Future<void> _saveSummaryStats(BuildContext context) async {
-    final dateRange = _getDateRange();
-    final startDate = dateRange['start'].toDate();
-    final endDate = dateRange['end'].toDate();
-
-    final transactions = await _cashService
-        .getTransactions(startDate, endDate)
-        .first; // Получаем текущие транзакции
-    final stats = _calculateStats(transactions);
-
-    try {
-      await _cashService.saveSummaryStats(
-        startDate: startDate,
-        endDate: endDate,
-        totalTurnover: stats['totalTurnover'] as double,
-        totalProfit: stats['totalProfit'] as double,
-        buyAmounts: stats['buyAmounts'] as Map<String, double>,
-        sellAmounts: stats['sellAmounts'] as Map<String, double>,
-        buyCounts: stats['buyCounts'] as Map<String, int>,
-        sellCounts: stats['sellCounts'] as Map<String, int>,
-      );
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Отчёт сохранён')),
-      );
-    } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Ошибка при сохранении: $e')),
-      );
-    }
   }
 }
