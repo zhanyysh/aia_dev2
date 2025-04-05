@@ -156,6 +156,51 @@ class _MainScreenState extends State<MainScreen> {
               },
             ),
             ListTile(
+              leading: Icon(Icons.brightness_6),
+              title: Text('Сменить тему'),
+              onTap: () {
+                showDialog(
+                  context: context,
+                  builder: (context) {
+                    return AlertDialog(
+                      title: Text('Сменить тему'),
+                      content: Text('Выберите тему:'),
+                      actions: [
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              // Change to light theme
+                              ThemeData theme = Theme.of(context);
+                              if (theme.brightness == Brightness.dark) {
+                                theme = ThemeData.light();
+                              }
+                              // Apply the light theme
+                            });
+                          },
+                          child: Text('Светлая'),
+                        ),
+                        TextButton(
+                          onPressed: () {
+                            Navigator.of(context).pop();
+                            setState(() {
+                              // Change to dark theme
+                              ThemeData theme = Theme.of(context);
+                              if (theme.brightness == Brightness.light) {
+                                theme = ThemeData.dark();
+                              }
+                              // Apply the dark theme
+                            });
+                          },
+                          child: Text('Темная'),
+                        ),
+                      ],
+                    );
+                  },
+                );
+              },
+            ),
+            ListTile(
               leading: Icon(Icons.logout),
               title: Text('Выйти'),
               onTap: () async {
@@ -187,47 +232,6 @@ class _MainScreenState extends State<MainScreen> {
                     );
                   });
                 }
-              },
-            ),
-            ListTile(
-              leading: Icon(Icons.brightness_6),
-              title: Text('Сменить тему'),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (context) {
-                    return AlertDialog(
-                      title: Text('Сменить тему'),
-                      content: Text('Выберите тему:'),
-                      actions: [
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            setState(() {
-                              // Change to light theme
-                              Theme.of(context).brightness == Brightness.dark
-                                  ? Theme.of(context).copyWith(brightness: Brightness.light)
-                                  : Theme.of(context).copyWith(brightness: Brightness.dark);
-                            });
-                          },
-                          child: Text('Светлая'),
-                        ),
-                        TextButton(
-                          onPressed: () {
-                            Navigator.of(context).pop();
-                            setState(() {
-                              // Change to dark theme
-                              Theme.of(context).brightness == Brightness.light
-                                  ? Theme.of(context).copyWith(brightness: Brightness.dark)
-                                  : Theme.of(context).copyWith(brightness: Brightness.light);
-                            });
-                          },
-                          child: Text('Темная'),
-                        ),
-                      ],
-                    );
-                  },
-                );
               },
             ),
           ],
