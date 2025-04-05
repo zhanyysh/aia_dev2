@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:exchange_app/screens/cash_screen.dart';
 import 'package:exchange_app/screens/events_screen.dart';
 import 'package:exchange_app/screens/main_screen.dart';
-import 'package:exchange_app/services/auth_service.dart';
 
 class HomeScreen extends StatefulWidget {
   const HomeScreen({super.key});
@@ -13,7 +12,6 @@ class HomeScreen extends StatefulWidget {
 
 class _HomeScreenState extends State<HomeScreen> {
   int _selectedIndex = 0;
-  final AuthService _authService = AuthService();
 
   // Список экранов - обновлен, добавлена касса обратно
   final List<Widget> _screens = [
