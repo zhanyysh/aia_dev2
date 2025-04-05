@@ -2,6 +2,11 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:exchange_app/screens/cash_screen.dart';
+import 'package:exchange_app/screens/currency_screen.dart';
+import 'package:exchange_app/screens/events_screen.dart';
+import 'package:exchange_app/screens/login_screen.dart';
+import 'package:exchange_app/services/auth_service.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -16,6 +21,7 @@ class _MainScreenState extends State<MainScreen> {
   double? _rate;
   double? _total;
   bool _isSelling = true; // true = Продажа (стрелка вверх), false = Покупка (стрелка вниз)
+  final AuthService _authService = AuthService();
 
   @override
   void initState() {
@@ -155,13 +161,44 @@ class _MainScreenState extends State<MainScreen> {
               title: Text('История'),
               onTap: () {
                 Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const EventsScreen()),
+                );
               },
             ),
             ListTile(
-              leading: Icon(Icons.settings),
-              title: Text('Настройки'),
+              leading: Icon(Icons.account_balance_wallet),
+              title: Text('Касса'),
               onTap: () {
                 Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CashScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.currency_exchange),
+              title: Text('Валюты'),
+              onTap: () {
+                Navigator.pop(context);
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const CurrencyScreen()),
+                );
+              },
+            ),
+            ListTile(
+              leading: Icon(Icons.logout),
+              title: Text('Выйти'),
+              onTap: () {
+                _authService.signOut().then((_) {
+                  Navigator.pushReplacement(
+                    context,
+                    MaterialPageRoute(builder: (context) => const LoginScreen()),
+                  );
+                });
               },
             ),
           ],
